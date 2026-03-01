@@ -561,6 +561,15 @@
     comfort with a terminal.
   </p>
 
+  <div class="callout warning" style="margin: 1.5rem 0;">
+    <p>
+      ⚠ <strong>Do not store your audiobooks on the SD card.</strong>
+      SD cards are slow for large media files and have a limited number of write cycles —
+      constant access will shorten their lifespan significantly.
+      Use an external USB hard drive or SSD instead. The steps below assume this setup.
+    </p>
+  </div>
+
   <div class="steps">
 
     <div class="step">
@@ -598,19 +607,47 @@ pip3 install flask --break-system-packages</code></pre>
     <div class="step">
       <div class="step-num">4</div>
       <div class="step-body">
-        <h3>Organize your audiobooks</h3>
+        <h3>Mount your external drive automatically</h3>
         <p>
-          Create the library folder and copy your books. Same structure as
-          local mode — one subfolder per book, cover image inside:
+          Connect your USB hard drive or SSD to the Pi.
+          First, find its identifier:
         </p>
         <div class="code-label">terminal</div>
-        <pre><code>sudo mkdir -p /srv/audiobook-data/books
-sudo chown -R $USER:$USER /srv/audiobook-data</code></pre>
-        <div class="tree" style="margin-top: 0.75rem;">
-          <span class="dir">📁 /srv/audiobook-data/books/</span><br />
-          &nbsp;&nbsp;<span class="dir">📁 Terry Pratchett - Discworld 01 - The Colour of Magic/</span><br />
-          &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">🎵 chapter01.mp3</span><br />
-          &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">🖼 cover.jpg</span>
+        <pre><code>lsblk</code></pre>
+        <p>
+          Look for your drive in the output — it will typically appear as
+          <code>sda</code> with a partition like <code>sda1</code>.
+          Then find its UUID (a permanent identifier that survives reboots):
+        </p>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo blkid /dev/sda1</code></pre>
+        <p>
+          You will see output like:
+        </p>
+        <pre><code>/dev/sda1: UUID="a1b2c3d4-..." TYPE="ext4"</code></pre>
+        <p>
+          Create the mount point and add it to <code>/etc/fstab</code>
+          so the drive mounts automatically on every boot:
+        </p>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo mkdir -p /mnt/audiodrive
+sudo nano /etc/fstab</code></pre>
+        <p>Add this line at the end of the file (replace the UUID with yours):</p>
+        <div class="code-label">/etc/fstab</div>
+        <pre><code>UUID=a1b2c3d4-...  /mnt/audiodrive  ext4  defaults,nofail  0  2</code></pre>
+        <p>
+          The <code>nofail</code> option is important — it prevents the Pi from
+          hanging on boot if the drive is not connected.
+          Apply the change without rebooting:
+        </p>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo mount -a</code></pre>
+        <div class="callout">
+          <p>
+            💡 If your drive is formatted as <strong>NTFS</strong> (common for drives
+            previously used on Windows), replace <code>ext4</code> with <code>ntfs-3g</code>
+            and install the driver first: <code>sudo apt install ntfs-3g</code>
+          </p>
         </div>
       </div>
     </div>
@@ -618,14 +655,62 @@ sudo chown -R $USER:$USER /srv/audiobook-data</code></pre>
     <div class="step">
       <div class="step-num">5</div>
       <div class="step-body">
+        <h3>Create the config file</h3>
+        <p>
+          All paths are stored in a single config file so you never have to
+          edit multiple scripts when your folder structure changes.
+          Save the following as <code>/srv/audiobook-data/config.env</code>:
+        </p>
+        <div class="code-label">/srv/audiobook-data/config.env</div>
+        <pre><code># Path to the folder containing your audiobook subfolders.
+# Change this if your drive is mounted elsewhere or your folder has a different name.
+BOOKS_DIR=/mnt/audiodrive/audiobooks
+
+# Path where library.json and progress data will be stored.
+# This stays on the SD card — only the books live on the external drive.
+DATA_DIR=/srv/audiobook-data</code></pre>
+        <p>Then create the data directory and the books folder on your drive:</p>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo mkdir -p /srv/audiobook-data
+sudo chown -R $USER:$USER /srv/audiobook-data
+mkdir -p /mnt/audiodrive/audiobooks</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <h3>Organize your audiobooks</h3>
+        <p>
+          Copy your books to the external drive. One subfolder per book,
+          cover image inside:
+        </p>
+        <div class="tree">
+          <span class="dir">📁 /mnt/audiodrive/audiobooks/</span><br />
+          &nbsp;&nbsp;<span class="dir">📁 Terry Pratchett - Discworld 01 - The Colour of Magic/</span><br />
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">🎵 chapter01.mp3</span><br />
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">🎵 chapter02.mp3</span><br />
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">🖼 cover.jpg</span><br />
+          &nbsp;&nbsp;<span class="dir">📁 Frank Herbert - Dune/</span><br />
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">🎵 dune.m4b</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">7</div>
+      <div class="step-body">
         <h3>Create the Flask API</h3>
         <p>Save the following as <code>/srv/audiobook-data/audiobook_api.py</code>:</p>
         <div class="code-label">audiobook_api.py</div>
         <pre><code>from flask import Flask, jsonify, request
 import json, os
+from dotenv import load_dotenv
+
+load_dotenv("/srv/audiobook-data/config.env")
+DATA_DIR = os.getenv("DATA_DIR", "/srv/audiobook-data")
 
 app = Flask(__name__)
-DATA_DIR = "/srv/audiobook-data"
 
 @app.route("/api/progress/&lt;profile&gt;/&lt;book_id&gt;", methods=["GET"])
 def get_progress(profile, book_id):
@@ -645,11 +730,13 @@ def post_progress(profile, book_id):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)</code></pre>
+        <div class="code-label">terminal — install python-dotenv</div>
+        <pre><code>pip3 install python-dotenv --break-system-packages</code></pre>
       </div>
     </div>
 
     <div class="step">
-      <div class="step-num">6</div>
+      <div class="step-num">8</div>
       <div class="step-body">
         <h3>Configure nginx</h3>
         <p>Save the following as <code>/etc/nginx/sites-available/audiobooks</code>:</p>
@@ -662,7 +749,7 @@ if __name__ == "__main__":
     }
 
     location / {
-        root /srv/audiobook-data/books;
+        root /mnt/audiodrive/audiobooks;
         autoindex off;
     }
 
@@ -670,6 +757,15 @@ if __name__ == "__main__":
         proxy_pass http://127.0.0.1:5000;
     }
 }</code></pre>
+        <div class="callout warning">
+          <p>
+            ⚠ <strong>nginx cannot read <code>config.env</code>.</strong>
+            The paths above are hardcoded directly in this file. If you ever move
+            your books to a different drive or folder, you must update
+            <code>alias</code> and <code>root</code> here manually —
+            changing <code>config.env</code> alone will not be enough.
+          </p>
+        </div>
         <div class="code-label">terminal</div>
         <pre><code>sudo ln -s /etc/nginx/sites-available/audiobooks \
           /etc/nginx/sites-enabled/audiobooks
@@ -678,18 +774,19 @@ sudo nginx -t && sudo systemctl reload nginx</code></pre>
     </div>
 
     <div class="step">
-      <div class="step-num">7</div>
+      <div class="step-num">9</div>
       <div class="step-body">
         <h3>Create the library scanner</h3>
         <p>
-          This script generates <code>library.json</code> automatically
-          whenever you add or remove books. Save as
+          This script reads the books path from <code>config.env</code> and
+          regenerates <code>library.json</code> automatically whenever
+          you add or remove books. Save as
           <code>/srv/audiobook-data/regen_library.sh</code>:
         </p>
         <div class="code-label">regen_library.sh</div>
         <pre><code>#!/bin/bash
-BOOKS_DIR="/srv/audiobook-data/books"
-OUTPUT="/srv/audiobook-data/library.json"
+source /srv/audiobook-data/config.env
+OUTPUT="$DATA_DIR/library.json"
 
 slugify() {
   echo "$1" | tr '[:upper:]' '[:lower:]' | \
@@ -738,16 +835,70 @@ echo "]" >> "$OUTPUT"</code></pre>
         <div class="code-label">terminal</div>
         <pre><code>chmod +x /srv/audiobook-data/regen_library.sh
 /srv/audiobook-data/regen_library.sh</code></pre>
+        <div class="callout warning">
+          <p>
+            ⚠ The first run of this script can take a while if you have a large library
+            or books with many short chapter files — it runs <code>ffprobe</code> on every
+            audio file to read its duration. Subsequent runs are faster as only new or
+            changed files are processed. Let it finish before starting the services.
+          </p>
+        </div>
       </div>
     </div>
 
     <div class="step">
-      <div class="step-num">8</div>
+      <div class="step-num">10</div>
+      <div class="step-body">
+        <h3>Create the folder watcher script</h3>
+        <p>
+          This script watches for changes in your books folder and triggers
+          a library rescan — but only after disk activity has settled for
+          <strong>25 seconds</strong>. This prevents regen from running
+          while a book upload is still in progress.
+          Save as <code>/srv/audiobook-data/audiobook-watch.sh</code>:
+        </p>
+        <div class="code-label">audiobook-watch.sh</div>
+        <pre><code>#!/bin/bash
+source /srv/audiobook-data/config.env
+
+echo "Watching $BOOKS_DIR for changes..."
+
+while true; do
+    # Wait for any change event in the books folder
+    inotifywait -r -e modify,create,delete,moved_to,moved_from \
+        "$BOOKS_DIR" 2>/dev/null
+
+    # Disk activity detected — wait for it to settle before regenerating.
+    # This prevents regen from firing mid-upload when copying large files.
+    echo "Change detected. Waiting for activity to settle..."
+    while inotifywait -r -e modify,create,delete,moved_to,moved_from \
+        -t 25 "$BOOKS_DIR" 2>/dev/null; do
+        echo "Still active, resetting settle timer..."
+    done
+
+    echo "Activity settled. Regenerating library..."
+    /srv/audiobook-data/regen_library.sh
+    echo "Library regenerated."
+done</code></pre>
+        <div class="code-label">terminal</div>
+        <pre><code>chmod +x /srv/audiobook-data/audiobook-watch.sh</code></pre>
+        <div class="callout">
+          <p>
+            💡 The 25-second timer resets every time new activity is detected.
+            If you are copying a large book that takes several minutes, regen
+            will only run once — 25 seconds after the last file write completes.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">11</div>
       <div class="step-body">
         <h3>Set up systemd services</h3>
         <p>
-          Two services — one for the Flask API, one that watches
-          for new books and auto-regenerates the library.
+          Two services — one for the Flask API, one that runs the watcher script.
+          Both read the books path from <code>config.env</code>.
         </p>
         <p class="code-label">/etc/systemd/system/audiobook-api.service</p>
         <pre><code>[Unit]
@@ -755,6 +906,7 @@ Description=AudioBook Flask API
 After=network.target
 
 [Service]
+EnvironmentFile=/srv/audiobook-data/config.env
 ExecStart=/usr/bin/python3 /srv/audiobook-data/audiobook_api.py
 WorkingDirectory=/srv/audiobook-data
 Restart=always
@@ -769,9 +921,8 @@ Description=AudioBook Library Watcher
 After=network.target
 
 [Service]
-ExecStart=/bin/bash -c 'while inotifywait -r -e modify,create,delete \
-  /srv/audiobook-data/books; do \
-  /srv/audiobook-data/regen_library.sh; done'
+EnvironmentFile=/srv/audiobook-data/config.env
+ExecStart=/bin/bash /srv/audiobook-data/audiobook-watch.sh
 Restart=always
 User=pi
 
@@ -786,17 +937,13 @@ sudo systemctl start audiobook-api audiobook-watcher</code></pre>
     </div>
 
     <div class="step">
-      <div class="step-num">9</div>
+      <div class="step-num">12</div>
       <div class="step-body">
         <h3>Connect the app</h3>
-        <p>
-          Find your Raspberry Pi's local IP address:
-        </p>
+        <p>Find your Raspberry Pi's local IP address:</p>
         <div class="code-label">terminal</div>
         <pre><code>hostname -I</code></pre>
-        <p>
-          In the app, go to <strong>Settings → Server</strong> and enter:
-        </p>
+        <p>In the app, go to <strong>Settings → Server</strong> and enter:</p>
         <pre><code>http://192.168.x.x:8081</code></pre>
         <p>Replace <code>192.168.x.x</code> with your Pi's actual IP address.</p>
         <div class="callout">
