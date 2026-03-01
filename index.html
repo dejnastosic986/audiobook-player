@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AudioBook Player — Your Library, Your Rules</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg:        #0e0e0f;
+      --bg2:       #161618;
+      --bg3:       #1e1e21;
+      --border:    #2a2a2e;
+      --text:      #e8e6e0;
+      --muted:     #7a7875;
+      --accent:    #c9a96e;
+      --accent2:   #7eb8a4;
+      --danger:    #c97070;
+      --code-bg:   #131315;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 300;
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── NOISE TEXTURE OVERLAY ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.4;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(14,14,15,0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+    }
+
+    .nav-logo {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.1rem;
+      color: var(--accent);
+      text-decoration: none;
+      letter-spacing: 0.01em;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+      list-style: none;
+    }
+
+    .nav-links a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 400;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover { color: var(--text); }
+
+    /* ── HERO ── */
+    .hero {
+      position: relative;
+      min-height: 92vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 6rem 2rem 4rem;
+      max-width: 860px;
+      margin: 0 auto;
+      overflow: hidden;
+    }
+
+    .hero-eyebrow {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--accent);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: 1.5rem;
+      opacity: 0;
+      animation: fadeUp 0.6s ease forwards 0.1s;
+    }
+
+    .hero h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2.8rem, 8vw, 5.5rem);
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      margin-bottom: 1.5rem;
+      opacity: 0;
+      animation: fadeUp 0.7s ease forwards 0.2s;
+    }
+
+    .hero h1 em {
+      font-style: italic;
+      color: var(--accent);
+    }
+
+    .hero-sub {
+      font-size: 1.15rem;
+      color: var(--muted);
+      max-width: 520px;
+      margin-bottom: 2.5rem;
+      opacity: 0;
+      animation: fadeUp 0.7s ease forwards 0.35s;
+    }
+
+    .hero-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      opacity: 0;
+      animation: fadeUp 0.7s ease forwards 0.5s;
+    }
+
+    .badge {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      padding: 0.35rem 1rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .badge span { color: var(--accent2); }
+
+    /* Decorative vinyl record */
+    .vinyl {
+      position: absolute;
+      right: -80px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 360px;
+      height: 360px;
+      border-radius: 50%;
+      background: conic-gradient(
+        from 0deg,
+        #1a1a1c, #222224, #1a1a1c, #202022,
+        #1a1a1c, #222224, #1a1a1c, #202022,
+        #1a1a1c, #222224, #1a1a1c, #202022,
+        #1a1a1c
+      );
+      opacity: 0.35;
+      animation: spin 30s linear infinite;
+    }
+
+    .vinyl::after {
+      content: '';
+      position: absolute;
+      inset: 30%;
+      border-radius: 50%;
+      background: var(--bg);
+      border: 1px solid #2a2a2e;
+    }
+
+    /* ── SECTIONS ── */
+    section {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 5rem 2rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .section-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+
+    h2 {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(1.8rem, 4vw, 2.6rem);
+      font-weight: 700;
+      line-height: 1.15;
+      margin-bottom: 1.25rem;
+      letter-spacing: -0.01em;
+    }
+
+    h3 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      color: var(--text);
+    }
+
+    p {
+      color: var(--muted);
+      margin-bottom: 1rem;
+      font-size: 0.975rem;
+    }
+
+    p strong { color: var(--text); font-weight: 500; }
+
+    /* ── MODES GRID ── */
+    .modes-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-top: 2.5rem;
+    }
+
+    .mode-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.75rem;
+      transition: border-color 0.2s;
+    }
+
+    .mode-card:hover { border-color: var(--accent); }
+
+    .mode-icon {
+      font-size: 1.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .mode-card h3 { margin-bottom: 0.5rem; }
+
+    /* ── STEP LIST ── */
+    .steps {
+      counter-reset: step;
+      margin-top: 2.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 48px 1fr;
+      gap: 1.25rem;
+      padding: 1.75rem 0;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+
+    .step:last-child { border-bottom: none; }
+
+    .step-num {
+      counter-increment: step;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--accent);
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .step-body h3 { font-size: 1rem; margin-bottom: 0.4rem; }
+
+    /* ── CODE BLOCKS ── */
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+      position: relative;
+    }
+
+    code {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.82rem;
+      color: var(--accent2);
+      line-height: 1.7;
+    }
+
+    p code, li code {
+      background: var(--bg3);
+      padding: 0.15em 0.45em;
+      border-radius: 4px;
+      font-size: 0.82rem;
+      color: var(--accent2);
+    }
+
+    .code-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.5rem;
+    }
+
+    /* ── CALLOUTS ── */
+    .callout {
+      border-left: 3px solid var(--accent);
+      background: var(--bg2);
+      border-radius: 0 8px 8px 0;
+      padding: 1rem 1.25rem;
+      margin: 1.25rem 0;
+      font-size: 0.9rem;
+    }
+
+    .callout.warning {
+      border-left-color: var(--danger);
+    }
+
+    .callout p { margin: 0; color: var(--text); }
+
+    /* ── FOLDER TREE ── */
+    .tree {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.82rem;
+      line-height: 2;
+      color: var(--text);
+      margin: 1rem 0;
+    }
+
+    .tree .dir { color: var(--accent); }
+    .tree .file { color: var(--accent2); }
+    .tree .comment { color: var(--muted); font-style: italic; }
+
+    /* ── FORMAT TAGS ── */
+    .formats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin: 1rem 0;
+    }
+
+    .fmt {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.3rem 0.75rem;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.78rem;
+      color: var(--accent2);
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    /* ── ANIMATIONS ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes spin {
+      from { transform: translateY(-50%) rotate(0deg); }
+      to   { transform: translateY(-50%) rotate(360deg); }
+    }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 640px) {
+      .modes-grid { grid-template-columns: 1fr; }
+      .vinyl { display: none; }
+      nav { padding: 0 1rem; }
+      .nav-links { gap: 1.25rem; }
+      section { padding: 3.5rem 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── NAV ── -->
+<nav>
+  <a class="nav-logo" href="#">AudioBook Player</a>
+  <ul class="nav-links">
+    <li><a href="#about">About</a></li>
+    <li><a href="#local">Local</a></li>
+    <li><a href="#server">Server</a></li>
+  </ul>
+</nav>
+
+<!-- ── HERO ── -->
+<div class="hero">
+  <div class="vinyl"></div>
+  <p class="hero-eyebrow">Free · No DRM · No subscriptions</p>
+  <h1>Your library,<br /><em>your rules.</em></h1>
+  <p class="hero-sub">
+    An Android audiobook player that streams from your own server
+    or plays directly from your phone. You own your books — forever.
+  </p>
+  <div class="hero-badges">
+    <div class="badge"><span>✦</span> No account required</div>
+    <div class="badge"><span>✦</span> No cloud lock-in</div>
+    <div class="badge"><span>✦</span> Family sharing via server</div>
+    <div class="badge"><span>✦</span> Works offline</div>
+  </div>
+</div>
+
+<!-- ── ABOUT ── -->
+<section id="about">
+  <p class="section-label">Overview</p>
+  <h2>Two ways to use it</h2>
+  <p>
+    AudioBook Player works in two independent modes. Choose the one that fits
+    your setup — or switch between them at any time in the app settings.
+  </p>
+
+  <div class="modes-grid">
+    <div class="mode-card">
+      <div class="mode-icon">📱</div>
+      <h3>Local Storage</h3>
+      <p>
+        Copy your audiobooks to a folder on your Android device. Point the app
+        at that folder and you're done. No server, no setup — just your files.
+      </p>
+    </div>
+    <div class="mode-card">
+      <div class="mode-icon">🏠</div>
+      <h3>Home Server</h3>
+      <p>
+        Run a lightweight server at home (a Raspberry Pi works perfectly).
+        Stream your entire library over Wi-Fi or mobile data, with automatic
+        sync across all your devices.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ── LOCAL SETUP ── -->
+<section id="local">
+  <p class="section-label">Local Storage Mode</p>
+  <h2>Getting started<br />on your phone</h2>
+  <p>No server, no terminal. Just files.</p>
+
+  <div class="steps">
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h3>Create a folder on your phone</h3>
+        <p>
+          Using your file manager, create a dedicated folder for your audiobooks —
+          for example <code>Audiobooks</code> in your internal storage or SD card.
+        </p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <h3>Organize your books</h3>
+        <p>
+          Each book must be in its own subfolder. The folder name becomes the
+          book title in the app. Recommended format:
+        </p>
+        <div class="tree">
+          <span class="dir">📁 Audiobooks/</span><br />
+          &nbsp;&nbsp;<span class="dir">📁 Terry Pratchett - Discworld 01 - The Colour of Magic/</span><br />
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">🎵 chapter01.mp3</span><br />
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">🎵 chapter02.mp3</span><br />
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">🖼 cover.jpg</span><br />
+          &nbsp;&nbsp;<span class="dir">📁 Frank Herbert - Dune/</span><br />
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">🎵 dune.m4b</span><br />
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">🖼 cover.png</span>
+        </div>
+        <div class="callout warning">
+          <p>⚠ Renaming a folder will reset your listening progress for that book.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <h3>Select the folder in the app</h3>
+        <p>
+          Open the app → tap the settings icon → select <strong>Local storage</strong>
+          → tap <strong>Choose books folder</strong> → navigate to your audiobooks
+          folder and confirm. The app scans it once and caches the library
+          for instant startup next time.
+        </p>
+      </div>
+    </div>
+
+  </div>
+
+  <h3 style="margin-top: 2.5rem;">Supported formats</h3>
+  <div class="formats">
+    <span class="fmt">mp3</span>
+    <span class="fmt">m4b</span>
+    <span class="fmt">m4a</span>
+    <span class="fmt">flac</span>
+    <span class="fmt">ogg</span>
+    <span class="fmt">wav</span>
+  </div>
+  <p>
+    Tracks inside a folder are played in <strong>alphabetical order</strong>.
+    Name your files so they sort correctly — e.g. <code>chapter01.mp3</code>,
+    <code>chapter02.mp3</code>, and so on.
+  </p>
+
+  <div class="callout" style="margin-top: 1.5rem;">
+    <p>
+      💡 Keep only audio files and one cover image in each book folder.
+      Other files won't cause problems, but keeping things tidy is recommended.
+    </p>
+  </div>
+</section>
+
+<!-- ── SERVER SETUP ── -->
+<section id="server">
+  <p class="section-label">Server Mode</p>
+  <h2>Running your<br />own server</h2>
+  <p>
+    This guide uses a <strong>Raspberry Pi</strong> (any model with Wi-Fi),
+    but the same steps work on any Linux machine. You'll need basic
+    comfort with a terminal.
+  </p>
+
+  <div class="steps">
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h3>Install Raspberry Pi OS</h3>
+        <p>
+          Use <a href="https://www.raspberrypi.com/software/" style="color:var(--accent2)">Raspberry Pi Imager</a>
+          to flash <strong>Raspberry Pi OS Lite (64-bit)</strong> to your SD card.
+          Enable SSH and set your username/password in the imager before flashing.
+        </p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <h3>Connect and update</h3>
+        <p>SSH into your Pi, then update the system:</p>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo apt update && sudo apt upgrade -y</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <h3>Install required packages</h3>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo apt install -y nginx python3 python3-pip ffmpeg inotify-tools
+pip3 install flask --break-system-packages</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <h3>Organize your audiobooks</h3>
+        <p>
+          Create the library folder and copy your books. Same structure as
+          local mode — one subfolder per book, cover image inside:
+        </p>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo mkdir -p /srv/audiobook-data/books
+sudo chown -R $USER:$USER /srv/audiobook-data</code></pre>
+        <div class="tree" style="margin-top: 0.75rem;">
+          <span class="dir">📁 /srv/audiobook-data/books/</span><br />
+          &nbsp;&nbsp;<span class="dir">📁 Terry Pratchett - Discworld 01 - The Colour of Magic/</span><br />
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">🎵 chapter01.mp3</span><br />
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="file">🖼 cover.jpg</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <h3>Create the Flask API</h3>
+        <p>Save the following as <code>/srv/audiobook-data/audiobook_api.py</code>:</p>
+        <div class="code-label">audiobook_api.py</div>
+        <pre><code>from flask import Flask, jsonify, request
+import json, os
+
+app = Flask(__name__)
+DATA_DIR = "/srv/audiobook-data"
+
+@app.route("/api/progress/&lt;profile&gt;/&lt;book_id&gt;", methods=["GET"])
+def get_progress(profile, book_id):
+    path = f"{DATA_DIR}/progress/{profile}/{book_id}.json"
+    if os.path.exists(path):
+        return jsonify(json.load(open(path)))
+    return jsonify({"trackIndex": 0, "positionMs": 0, "updatedAt": 0})
+
+@app.route("/api/progress/&lt;profile&gt;/&lt;book_id&gt;", methods=["POST"])
+def post_progress(profile, book_id):
+    data = request.get_json()
+    folder = f"{DATA_DIR}/progress/{profile}"
+    os.makedirs(folder, exist_ok=True)
+    with open(f"{folder}/{book_id}.json", "w") as f:
+        json.dump(data, f)
+    return jsonify({"ok": True})
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <h3>Configure nginx</h3>
+        <p>Save the following as <code>/etc/nginx/sites-available/audiobooks</code>:</p>
+        <div class="code-label">/etc/nginx/sites-available/audiobooks</div>
+        <pre><code>server {
+    listen 8081;
+
+    location /library.json {
+        alias /srv/audiobook-data/library.json;
+    }
+
+    location / {
+        root /srv/audiobook-data/books;
+        autoindex off;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:5000;
+    }
+}</code></pre>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo ln -s /etc/nginx/sites-available/audiobooks \
+          /etc/nginx/sites-enabled/audiobooks
+sudo nginx -t && sudo systemctl reload nginx</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">7</div>
+      <div class="step-body">
+        <h3>Create the library scanner</h3>
+        <p>
+          This script generates <code>library.json</code> automatically
+          whenever you add or remove books. Save as
+          <code>/srv/audiobook-data/regen_library.sh</code>:
+        </p>
+        <div class="code-label">regen_library.sh</div>
+        <pre><code>#!/bin/bash
+BOOKS_DIR="/srv/audiobook-data/books"
+OUTPUT="/srv/audiobook-data/library.json"
+
+slugify() {
+  echo "$1" | tr '[:upper:]' '[:lower:]' | \
+    sed 's/[^a-z0-9 _-]//g' | \
+    sed 's/[ _-]\+/-/g' | sed 's/^-\|-$//g'
+}
+
+echo "[" > "$OUTPUT"
+first=true
+
+for dir in "$BOOKS_DIR"/*/; do
+  [ -d "$dir" ] || continue
+  title=$(basename "$dir")
+  id=$(slugify "$title")
+  cover=""
+
+  for img in "$dir"*.jpg "$dir"*.png "$dir"*.jpeg; do
+    [ -f "$img" ] && cover=$(basename "$img") && break
+  done
+
+  tracks="["
+  track_first=true
+  for f in $(ls "$dir"*.mp3 "$dir"*.m4b "$dir"*.m4a \
+                 "$dir"*.flac "$dir"*.ogg 2>/dev/null | sort); do
+    filename=$(basename "$f")
+    dur=$(ffprobe -v quiet -show_entries \
+      format=duration -of csv=p=0 "$f" 2>/dev/null | cut -d. -f1)
+    dur_ms=$(( ${dur:-0} * 1000 ))
+    [ "$track_first" = true ] && track_first=false || tracks="$tracks,"
+    tracks="$tracks{\"file\":\"$filename\",\"durationMs\":$dur_ms}"
+  done
+  tracks="$tracks]"
+
+  [ "$first" = true ] && first=false || echo "," >> "$OUTPUT"
+  cat >> "$OUTPUT" <<JSON
+{
+  "id": "$id",
+  "title": "$title",
+  "coverUrl": "$cover",
+  "tracks": $tracks
+}
+JSON
+done
+
+echo "]" >> "$OUTPUT"</code></pre>
+        <div class="code-label">terminal</div>
+        <pre><code>chmod +x /srv/audiobook-data/regen_library.sh
+/srv/audiobook-data/regen_library.sh</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">8</div>
+      <div class="step-body">
+        <h3>Set up systemd services</h3>
+        <p>
+          Two services — one for the Flask API, one that watches
+          for new books and auto-regenerates the library.
+        </p>
+        <p class="code-label">/etc/systemd/system/audiobook-api.service</p>
+        <pre><code>[Unit]
+Description=AudioBook Flask API
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /srv/audiobook-data/audiobook_api.py
+WorkingDirectory=/srv/audiobook-data
+Restart=always
+User=pi
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+
+        <p class="code-label">/etc/systemd/system/audiobook-watcher.service</p>
+        <pre><code>[Unit]
+Description=AudioBook Library Watcher
+After=network.target
+
+[Service]
+ExecStart=/bin/bash -c 'while inotifywait -r -e modify,create,delete \
+  /srv/audiobook-data/books; do \
+  /srv/audiobook-data/regen_library.sh; done'
+Restart=always
+User=pi
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+
+        <div class="code-label">terminal — enable and start both services</div>
+        <pre><code>sudo systemctl daemon-reload
+sudo systemctl enable audiobook-api audiobook-watcher
+sudo systemctl start audiobook-api audiobook-watcher</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">9</div>
+      <div class="step-body">
+        <h3>Connect the app</h3>
+        <p>
+          Find your Raspberry Pi's local IP address:
+        </p>
+        <div class="code-label">terminal</div>
+        <pre><code>hostname -I</code></pre>
+        <p>
+          In the app, go to <strong>Settings → Server</strong> and enter:
+        </p>
+        <pre><code>http://192.168.x.x:8081</code></pre>
+        <p>Replace <code>192.168.x.x</code> with your Pi's actual IP address.</p>
+        <div class="callout">
+          <p>
+            💡 For remote access outside your home network, consider setting up
+            a VPN (WireGuard is lightweight and works well on Raspberry Pi).
+          </p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ── FOOTER ── -->
+<footer>
+  <p>AudioBook Player — Free &amp; open source. No ads, no tracking, no nonsense.</p>
+</footer>
+
+</body>
+</html>
