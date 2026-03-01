@@ -419,6 +419,7 @@
     <li><a href="#about">About</a></li>
     <li><a href="#local">Local</a></li>
     <li><a href="#server">Server</a></li>
+    <li><a href="#philosophy">Philosophy</a></li>
   </ul>
 </nav>
 
@@ -808,6 +809,85 @@ sudo systemctl start audiobook-api audiobook-watcher</code></pre>
     </div>
 
   </div>
+</section>
+
+<!-- ── DESIGN PHILOSOPHY ── -->
+<section id="philosophy">
+  <p class="section-label">Design Philosophy</p>
+  <h2>Why there is<br /><em>no login.</em></h2>
+  <p>
+    AudioBook Player has no user accounts, no passwords, and no authentication layer.
+    This is not an oversight — it is a deliberate design decision rooted in a specific philosophy.
+  </p>
+
+  <div class="callout" style="margin: 2rem 0;">
+    <p>
+      This app was built for one reason: <strong>the frustration of paying for an audiobook
+      and having it taken away.</strong> Audible removes titles. Services shut down. Terms change.
+      If you bought it, you should own it — permanently, unconditionally.
+    </p>
+  </div>
+
+  <p>
+    The target user is a person who manages their <strong>own private server</strong>
+    on their own home network, sharing a library with their family.
+    For that use case, authentication adds friction without adding value —
+    you don't put a lock on the inside of your own front door.
+  </p>
+
+  <h3 style="margin-top: 2.5rem;">Why this doesn't make piracy easier</h3>
+  <p>
+    A public pirate audiobook repository needs to be <strong>discoverable, scalable,
+    and easy to use for strangers.</strong> This server is none of those things:
+  </p>
+
+  <div class="modes-grid" style="margin-top: 1.25rem;">
+    <div class="mode-card">
+      <div class="mode-icon">🔒</div>
+      <h3>Not discoverable</h3>
+      <p>
+        The server runs on a private IP address inside your home network.
+        There is no domain, no DNS, no way to find it from the outside
+        unless you deliberately expose it.
+      </p>
+    </div>
+    <div class="mode-card">
+      <div class="mode-icon">📦</div>
+      <h3>Not scalable</h3>
+      <p>
+        A Raspberry Pi serving files over a home connection cannot handle
+        hundreds of concurrent users. The architecture is explicitly designed
+        for single-family use.
+      </p>
+    </div>
+    <div class="mode-card">
+      <div class="mode-icon">🛠</div>
+      <h3>Not plug-and-play</h3>
+      <p>
+        Setting up the server requires SSH access, terminal commands, and
+        manual file management. This is not a service anyone stumbles into —
+        it requires deliberate technical effort.
+      </p>
+    </div>
+    <div class="mode-card">
+      <div class="mode-icon">🚫</div>
+      <h3>No search, no catalog</h3>
+      <p>
+        There is no public-facing interface, no browse page, no way to
+        discover what books are on the server without already having
+        the app and knowing the address.
+      </p>
+    </div>
+  </div>
+
+  <p style="margin-top: 2rem;">
+    The conscious choice to omit authentication is what keeps this app
+    <strong>honest about what it is</strong> — a personal tool for people who believe
+    in owning their media, not a platform with pretensions of scaling.
+    If you want to share audiobooks with the world, this is the wrong tool.
+    If you want to share them with your family without asking anyone's permission
+    to access what you already paid for — this was built for you.
+  </p>
 </section>
 
 <!-- ── FOOTER ── -->
