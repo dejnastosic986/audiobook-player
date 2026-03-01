@@ -579,7 +579,18 @@
         <p>
           Use <a href="https://www.raspberrypi.com/software/" style="color:var(--accent2)">Raspberry Pi Imager</a>
           to flash <strong>Raspberry Pi OS Lite (64-bit)</strong> to your SD card.
-          Enable SSH and set your username/password in the imager before flashing.
+          Before writing, click the <strong>⚙ gear icon</strong> (or press Ctrl+Shift+X)
+          to open advanced settings and configure the following:
+        </p>
+        <ul style="color:var(--muted); font-size:0.95rem; margin: 0.75rem 0 0.75rem 1.5rem; line-height:2;">
+          <li>Enable SSH — <strong>Use password authentication</strong></li>
+          <li>Set a username and password — remember these, you will need them</li>
+          <li>Configure your Wi-Fi network name and password</li>
+          <li>Set the hostname to something memorable, e.g. <code>audioserver</code></li>
+        </ul>
+        <p>
+          Insert the SD card into your Pi and power it on.
+          Wait about 60 seconds for it to boot.
         </p>
       </div>
     </div>
@@ -587,10 +598,28 @@
     <div class="step">
       <div class="step-num">2</div>
       <div class="step-body">
-        <h3>Connect and update</h3>
-        <p>SSH into your Pi, then update the system:</p>
+        <h3>Connect to your Pi via SSH</h3>
+        <p>
+          Open a terminal on your computer
+          (on Windows use <a href="https://www.putty.org/" style="color:var(--accent2)">PuTTY</a>
+          or the built-in Windows Terminal, on Mac and Linux use the Terminal app)
+          and connect to your Pi:
+        </p>
+        <div class="code-label">terminal — replace "pi" with your username if you chose a different one</div>
+        <pre><code>ssh pi@audioserver.local</code></pre>
+        <p>
+          If that doesn't work, find your Pi's IP address from your router's admin page
+          and connect directly:
+        </p>
+        <pre><code>ssh pi@192.168.x.x</code></pre>
+        <p>
+          Type <code>yes</code> when asked about the fingerprint, then enter your password.
+          You won't see any characters while typing — that's normal.
+          Once connected, update the system:
+        </p>
         <div class="code-label">terminal</div>
         <pre><code>sudo apt update && sudo apt upgrade -y</code></pre>
+        <p>This may take a few minutes. Press <code>Y</code> and <code>Enter</code> if prompted.</p>
       </div>
     </div>
 
@@ -632,7 +661,12 @@ pip3 install flask --break-system-packages</code></pre>
         <div class="code-label">terminal</div>
         <pre><code>sudo mkdir -p /mnt/audiodrive
 sudo nano /etc/fstab</code></pre>
-        <p>Add this line at the end of the file (replace the UUID with yours):</p>
+        <p>
+          Add this line at the end of the file.
+          <strong>Replace <code>a1b2c3d4-...</code> with the exact UUID you got
+          from the <code>blkid</code> command above</strong> — copy and paste it
+          to avoid typos:
+        </p>
         <div class="code-label">/etc/fstab</div>
         <pre><code>UUID=a1b2c3d4-...  /mnt/audiodrive  ext4  defaults,nofail  0  2</code></pre>
         <p>
@@ -659,8 +693,23 @@ sudo nano /etc/fstab</code></pre>
         <p>
           All paths are stored in a single config file so you never have to
           edit multiple scripts when your folder structure changes.
-          Save the following as <code>/srv/audiobook-data/config.env</code>:
         </p>
+        <p>
+          Throughout this guide, whenever we say <em>"save the following as [filename]"</em>,
+          use this pattern — open the file in the <code>nano</code> text editor,
+          paste the content, then save and exit:
+        </p>
+        <div class="code-label">terminal — open file for editing</div>
+        <pre><code>sudo nano /path/to/filename</code></pre>
+        <p>
+          Paste the content, then press <strong>Ctrl+O</strong> to save,
+          <strong>Enter</strong> to confirm the filename,
+          and <strong>Ctrl+X</strong> to exit.
+        </p>
+        <p>Create <code>/srv/audiobook-data/config.env</code>:</p>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo nano /srv/audiobook-data/config.env</code></pre>
+        <p>Paste the following content:</p>
         <div class="code-label">/srv/audiobook-data/config.env</div>
         <pre><code># Path to the folder containing your audiobook subfolders.
 # Change this if your drive is mounted elsewhere or your folder has a different name.
@@ -669,11 +718,18 @@ BOOKS_DIR=/mnt/audiodrive/audiobooks
 # Path where library.json and progress data will be stored.
 # This stays on the SD card — only the books live on the external drive.
 DATA_DIR=/srv/audiobook-data</code></pre>
-        <p>Then create the data directory and the books folder on your drive:</p>
+        <p>Save and exit nano (Ctrl+O → Enter → Ctrl+X), then create the directories:</p>
         <div class="code-label">terminal</div>
         <pre><code>sudo mkdir -p /srv/audiobook-data
 sudo chown -R $USER:$USER /srv/audiobook-data
 mkdir -p /mnt/audiodrive/audiobooks</code></pre>
+        <div class="callout">
+          <p>
+            💡 <code>$USER</code> is a variable that automatically expands to your
+            current username — the same one you set in Raspberry Pi Imager.
+            You don't need to replace it manually.
+          </p>
+        </div>
       </div>
     </div>
 
@@ -701,7 +757,13 @@ mkdir -p /mnt/audiodrive/audiobooks</code></pre>
       <div class="step-num">7</div>
       <div class="step-body">
         <h3>Create the Flask API</h3>
-        <p>Save the following as <code>/srv/audiobook-data/audiobook_api.py</code>:</p>
+        <p>First, install the required Python packages:</p>
+        <div class="code-label">terminal</div>
+        <pre><code>pip3 install flask python-dotenv --break-system-packages</code></pre>
+        <p>Then create the file:</p>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo nano /srv/audiobook-data/audiobook_api.py</code></pre>
+        <p>Paste the following content:</p>
         <div class="code-label">audiobook_api.py</div>
         <pre><code>from flask import Flask, jsonify, request
 import json, os
@@ -730,8 +792,7 @@ def post_progress(profile, book_id):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)</code></pre>
-        <div class="code-label">terminal — install python-dotenv</div>
-        <pre><code>pip3 install python-dotenv --break-system-packages</code></pre>
+
       </div>
     </div>
 
@@ -739,7 +800,9 @@ if __name__ == "__main__":
       <div class="step-num">8</div>
       <div class="step-body">
         <h3>Configure nginx</h3>
-        <p>Save the following as <code>/etc/nginx/sites-available/audiobooks</code>:</p>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo nano /etc/nginx/sites-available/audiobooks</code></pre>
+        <p>Paste the following content:</p>
         <div class="code-label">/etc/nginx/sites-available/audiobooks</div>
         <pre><code>server {
     listen 8081;
@@ -780,9 +843,11 @@ sudo nginx -t && sudo systemctl reload nginx</code></pre>
         <p>
           This script reads the books path from <code>config.env</code> and
           regenerates <code>library.json</code> automatically whenever
-          you add or remove books. Save as
-          <code>/srv/audiobook-data/regen_library.sh</code>:
+          you add or remove books.
         </p>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo nano /srv/audiobook-data/regen_library.sh</code></pre>
+        <p>Paste the following content:</p>
         <div class="code-label">regen_library.sh</div>
         <pre><code>#!/bin/bash
 source /srv/audiobook-data/config.env
@@ -855,8 +920,10 @@ echo "]" >> "$OUTPUT"</code></pre>
           a library rescan — but only after disk activity has settled for
           <strong>25 seconds</strong>. This prevents regen from running
           while a book upload is still in progress.
-          Save as <code>/srv/audiobook-data/audiobook-watch.sh</code>:
         </p>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo nano /srv/audiobook-data/audiobook-watch.sh</code></pre>
+        <p>Paste the following content:</p>
         <div class="code-label">audiobook-watch.sh</div>
         <pre><code>#!/bin/bash
 source /srv/audiobook-data/config.env
@@ -933,6 +1000,16 @@ WantedBy=multi-user.target</code></pre>
         <pre><code>sudo systemctl daemon-reload
 sudo systemctl enable audiobook-api audiobook-watcher
 sudo systemctl start audiobook-api audiobook-watcher</code></pre>
+
+        <div class="code-label">terminal — verify both services are running</div>
+        <pre><code>sudo systemctl status audiobook-api
+sudo systemctl status audiobook-watcher</code></pre>
+        <p>
+          Both services should show <code>Active: active (running)</code> in green.
+          If either shows <code>failed</code>, check the logs for details:
+        </p>
+        <pre><code>sudo journalctl -u audiobook-api -n 30
+sudo journalctl -u audiobook-watcher -n 30</code></pre>
       </div>
     </div>
 
@@ -943,7 +1020,17 @@ sudo systemctl start audiobook-api audiobook-watcher</code></pre>
         <p>Find your Raspberry Pi's local IP address:</p>
         <div class="code-label">terminal</div>
         <pre><code>hostname -I</code></pre>
-        <p>In the app, go to <strong>Settings → Server</strong> and enter:</p>
+        <p>
+          Before opening the app, verify the server is responding correctly.
+          Open a browser on any device connected to the same Wi-Fi network and visit:
+        </p>
+        <pre><code>http://192.168.x.x:8081/library.json</code></pre>
+        <p>
+          You should see a JSON response with your book list. If you see an error,
+          double-check that both services are running (<code>systemctl status audiobook-api</code>)
+          and that nginx is active (<code>sudo systemctl status nginx</code>).
+        </p>
+        <p>Once the browser test works, open the app, go to <strong>Settings → Server</strong> and enter:</p>
         <pre><code>http://192.168.x.x:8081</code></pre>
         <p>Replace <code>192.168.x.x</code> with your Pi's actual IP address.</p>
         <div class="callout">
