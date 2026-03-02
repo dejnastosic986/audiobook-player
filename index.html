@@ -561,6 +561,45 @@
     comfort with a terminal.
   </p>
 
+  <!-- ── INSTALLER OPTION ── -->
+  <div style="
+    background: var(--bg2);
+    border: 1px solid var(--accent2);
+    border-radius: 12px;
+    padding: 1.75rem;
+    margin: 2rem 0;
+  ">
+    <p class="section-label" style="margin-bottom: 0.5rem;">Optional — automated setup</p>
+    <h3 style="margin-bottom: 0.75rem;">Run the installer script</h3>
+    <p>
+      If you prefer not to go through the steps manually, an interactive installer
+      script is available. It asks you a few questions and handles everything automatically —
+      packages, drive mounting, config files, nginx, and services.
+    </p>
+    <p>
+      The script is <strong>fully open source</strong> and available on GitHub.
+      You are encouraged to read it before running it — it contains comments
+      explaining every action it takes.
+    </p>
+    <div class="code-label">terminal — download and inspect first (recommended)</div>
+    <pre><code>curl -s https://raw.githubusercontent.com/dejnastosic986/audiobook-player/main/install.sh -o install.sh
+nano install.sh</code></pre>
+    <div class="code-label">terminal — run when ready</div>
+    <pre><code>bash install.sh</code></pre>
+    <p style="margin-top: 0.75rem;">Or run it directly in one command:</p>
+    <pre><code>bash <(curl -s https://raw.githubusercontent.com/dejnastosic986/audiobook-player/main/install.sh)</code></pre>
+    <div class="callout" style="margin-top: 1.25rem; margin-bottom: 0;">
+      <p>
+        💡 The installer does the same things described in the step-by-step guide below —
+        nothing more, nothing hidden. If something goes wrong, the manual steps are
+        there so you understand exactly what the script was trying to do.
+      </p>
+    </div>
+  </div>
+
+  <!-- ── MANUAL GUIDE ── -->
+  <p style="margin-bottom: 0.25rem;">Prefer to do it yourself? Follow the steps below.</p>
+
   <div class="callout warning" style="margin: 1.5rem 0;">
     <p>
       ⚠ <strong>Do not store your audiobooks on the SD card.</strong>
@@ -606,12 +645,12 @@
           and connect to your Pi:
         </p>
         <div class="code-label">terminal — replace "pi" with your username if you chose a different one</div>
-        <pre><code>ssh pi@audioserver.local</code></pre>
+        <pre><code>ssh <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="0b7b624b6a7e6f6264786e797d6e79256764686a67">[email&#160;protected]</a></code></pre>
         <p>
           If that doesn't work, find your Pi's IP address from your router's admin page
           and connect directly:
         </p>
-        <pre><code>ssh pi@192.168.x.x</code></pre>
+        <pre><code>ssh <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="3d4d547d0c040f130c0b0513451345">[email&#160;protected]</a></code></pre>
         <p>
           Type <code>yes</code> when asked about the fingerprint, then enter your password.
           You won't see any characters while typing — that's normal.
@@ -1120,14 +1159,3 @@ sudo journalctl -u audiobook-watcher -n 30</code></pre>
     in owning their media, not a platform with pretensions of scaling.
     If you want to share audiobooks with the world, this is the wrong tool.
     If you want to share them with your family without asking anyone's permission
-    to access what you already paid for — this was built for you.
-  </p>
-</section>
-
-<!-- ── FOOTER ── -->
-<footer>
-  <p>AudioBook Player — Free &amp; open source. No ads, no tracking, no nonsense.</p>
-</footer>
-
-</body>
-</html>
