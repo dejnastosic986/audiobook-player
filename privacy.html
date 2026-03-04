@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AudioVault — Privacy Policy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg:      #0e0e0f;
+      --bg2:     #161618;
+      --bg3:     #1e1e21;
+      --border:  #2a2a2e;
+      --text:    #e8e6e0;
+      --muted:   #7a7875;
+      --accent:  #c9a96e;
+      --accent2: #7eb8a4;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 1rem;
+      line-height: 1.75;
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 1rem 2rem;
+      background: rgba(14,14,15,0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-logo {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.15rem;
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .nav-back {
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .nav-back:hover { color: var(--text); }
+
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 4rem 2rem 6rem;
+    }
+
+    .eyebrow {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.75rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 1rem;
+    }
+
+    h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: 2.5rem;
+      font-weight: 700;
+      line-height: 1.2;
+      margin-bottom: 0.5rem;
+    }
+
+    .updated {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 3rem;
+    }
+
+    .summary-box {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent2);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 3rem;
+    }
+
+    .summary-box p {
+      color: var(--accent2);
+      font-size: 1rem;
+      font-weight: 500;
+    }
+
+    section {
+      margin-bottom: 2.5rem;
+    }
+
+    h2 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    p {
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+
+    p strong {
+      color: var(--text);
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover { text-decoration: underline; }
+
+    footer {
+      text-align: center;
+      padding: 2rem;
+      color: var(--muted);
+      font-size: 0.8rem;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-logo" href="index.html">AudioVault</a>
+  <a class="nav-back" href="index.html">← Back to home</a>
+</nav>
+
+<main>
+  <p class="eyebrow">Legal</p>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated: March 2026</p>
+
+  <div class="summary-box">
+    <p>Short version: AudioVault collects no data. Zero. Nothing is sent anywhere.</p>
+  </div>
+
+  <section>
+    <h2>Overview</h2>
+    <p>
+      AudioVault ("the app") is a personal audiobook player for Android. This privacy policy
+      describes how the app handles your information. The answer is simple:
+      <strong>it doesn't.</strong>
+    </p>
+  </section>
+
+  <section>
+    <h2>Data collection</h2>
+    <p>
+      AudioVault does <strong>not</strong> collect, store, transmit, or share any personal data.
+      The app has no analytics, no tracking, no crash reporting, and no third-party SDKs
+      that collect information about you or your device.
+    </p>
+  </section>
+
+  <section>
+    <h2>What stays on your device</h2>
+    <p>
+      The following information is stored <strong>locally on your device only</strong>,
+      using Android's DataStore:
+    </p>
+    <p>
+      — Your profile name (default: "Listener")<br />
+      — Your server address (if using Server mode)<br />
+      — Your selected storage mode (Local or Server)<br />
+      — Your last played book and playback position<br />
+      — Your theme preference (System / Light / Dark)
+    </p>
+    <p>
+      This data never leaves your device and is never transmitted to any server
+      controlled by the developer.
+    </p>
+  </section>
+
+  <section>
+    <h2>Server mode</h2>
+    <p>
+      If you use Server mode, the app connects to a server address that <strong>you provide</strong>
+      and <strong>you control</strong>. This is typically a device on your home network
+      (e.g. a Raspberry Pi). The developer has no access to your server, your files,
+      or any data transmitted between the app and your server.
+    </p>
+  </section>
+
+  <section>
+    <h2>Permissions</h2>
+    <p>
+      The app requests the following Android permissions:
+    </p>
+    <p>
+      — <strong>Storage access</strong> — to read audiobook files from a folder you select
+      (Local Storage mode only)<br />
+      — <strong>Internet</strong> — to connect to your home server (Server mode only)<br />
+      — <strong>Foreground service</strong> — to continue audio playback while the screen is off
+    </p>
+    <p>No permission is used for any purpose beyond its stated function.</p>
+  </section>
+
+  <section>
+    <h2>Children's privacy</h2>
+    <p>
+      AudioVault does not knowingly collect any information from anyone, including children.
+      Since no data is collected at all, there is nothing specific to children's privacy to address.
+    </p>
+  </section>
+
+  <section>
+    <h2>Changes to this policy</h2>
+    <p>
+      If the app's data practices ever change, this page will be updated. The date at the top
+      of this page reflects when the policy was last revised.
+    </p>
+  </section>
+
+  <section>
+    <h2>Contact</h2>
+    <p>
+      If you have questions about this privacy policy, you can reach the developer via
+      the Google Play Store listing for AudioVault.
+    </p>
+  </section>
+</main>
+
+<footer>
+  © 2026 Dejan Stosic Dev · AudioVault: Audiobook Player
+</footer>
+
+</body>
+</html>
