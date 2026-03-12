@@ -1,261 +1,132 @@
 #!/bin/bash
+# =============================================================================
 # AudioVault Server Installer
-# https://dejnastosic986.github.io/audiobook-player
+# https://github.com/dejnastosic986/audiobook-player
 #
-# This script automates the server setup described in the guide.
-# It does nothing hidden — every action is printed before it runs.
-# You are welcome to read it before running it.
+# This script sets up a complete AudioVault server on a Raspberry Pi
+# (or any Debian/Ubuntu-based Linux machine).
 #
-# Usage:
-#   bash install.sh
-# Or directly from GitHub:
-#   bash <(curl -s https://raw.githubusercontent.com/dejnastosic986/audiobook-player/main/install.sh)
+# What it does:
+#   1. Installs required packages (nginx, python3, ffmpeg, inotify-tools)
+#   2. Asks where your audiobooks drive is mounted
+#   3. Creates /srv/audiobook-data with config, API, scanner and watcher scripts
+#   4. Configures nginx on port 8081
+#   5. Sets up correct file permissions (www-data sudoers)
+#   6. Creates and enables systemd services
+#   7. Runs the first library scan
+#
+# You are encouraged to read through this script before running it.
+# Every section is commented. Nothing is hidden.
+# =============================================================================
 
 set -e  # Exit immediately on any error
 
-# ── Colors ──────────────────────────────────────────────────────────────────
+# ── Colors ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
-RESET='\033[0m'
+NC='\033[0m' # No Color
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
-print_header() {
-    echo ""
-    echo -e "${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-    echo -e "${CYAN}${BOLD}  $1${RESET}"
-    echo -e "${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-}
+info()    { echo -e "${CYAN}${BOLD}[INFO]${NC}  $1"; }
+ok()      { echo -e "${GREEN}${BOLD}[ OK ]${NC}  $1"; }
+warn()    { echo -e "${YELLOW}${BOLD}[WARN]${NC}  $1"; }
+error()   { echo -e "${RED}${BOLD}[ERR ]${NC}  $1"; exit 1; }
+ask()     { echo -e "${BOLD}$1${NC}"; }
 
-print_step() {
-    echo -e "\n${GREEN}▶ $1${RESET}"
-}
-
-print_info() {
-    echo -e "  ${CYAN}ℹ $1${RESET}"
-}
-
-print_warning() {
-    echo -e "  ${YELLOW}⚠ $1${RESET}"
-}
-
-print_error() {
-    echo -e "  ${RED}✗ $1${RESET}"
-}
-
-print_success() {
-    echo -e "  ${GREEN}✓ $1${RESET}"
-}
-
-ask() {
-    # ask "Question" "default_value" -> result in $REPLY
-    local prompt="$1"
-    local default="$2"
-    echo -e -n "\n${BOLD}  $prompt${RESET}"
-    if [ -n "$default" ]; then
-        echo -e -n " ${CYAN}[${default}]${RESET}"
-    fi
-    echo -e -n ": "
-    read REPLY
-    if [ -z "$REPLY" ] && [ -n "$default" ]; then
-        REPLY="$default"
-    fi
-}
-
-confirm() {
-    # confirm "Question" -> returns 0 for yes, 1 for no
-    echo -e -n "\n${BOLD}  $1 (y/n): ${RESET}"
-    read answer
-    [[ "$answer" =~ ^[Yy]$ ]]
-}
-
-# ── Welcome ───────────────────────────────────────────────────────────────────
-clear
 echo ""
-echo -e "${CYAN}${BOLD}"
-echo "   █████╗ ██╗   ██╗██████╗ ██╗ ██████╗ "
-echo "  ██╔══██╗██║   ██║██╔══██╗██║██╔═══██╗"
-echo "  ███████║██║   ██║██║  ██║██║██║   ██║"
-echo "  ██╔══██║██║   ██║██║  ██║██║██║   ██║"
-echo "  ██║  ██║╚██████╔╝██████╔╝██║╚██████╔╝"
-echo "  ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝ ╚═════╝ "
-echo -e "${RESET}"
-echo -e "  ${BOLD}AudioVault Server Installer${RESET}"
-echo -e "  ${CYAN}https://dejnastosic986.github.io/audiobook-player${RESET}"
-echo ""
-echo -e "  This script will set up your AudioVault server step by step."
-echo -e "  Every action will be shown before it runs — nothing is hidden."
+echo -e "${BOLD}╔══════════════════════════════════════════╗${NC}"
+echo -e "${BOLD}║      AudioVault Server Installer         ║${NC}"
+echo -e "${BOLD}╚══════════════════════════════════════════╝${NC}"
 echo ""
 
-if ! confirm "Ready to start?"; then
-    echo ""
-    echo "  Setup cancelled. Run this script again when you're ready."
-    echo ""
-    exit 0
+# ── Root check ────────────────────────────────────────────────────────────────
+if [ "$EUID" -ne 0 ]; then
+  error "Please run this script with sudo:\n  sudo bash install.sh"
 fi
 
-# ── Check: running as non-root with sudo access ───────────────────────────────
-print_header "Checking system"
+REAL_USER="${SUDO_USER:-$(whoami)}"
+info "Running as root, actual user: ${BOLD}$REAL_USER${NC}"
 
-if [ "$EUID" -eq 0 ]; then
-    print_error "Please do not run this script as root. Run it as your normal user."
-    exit 1
-fi
-
-if ! sudo -n true 2>/dev/null; then
-    print_info "This script needs sudo access. You may be asked for your password."
-    sudo true || { print_error "sudo access required. Exiting."; exit 1; }
-fi
-
-print_success "Running as: $(whoami)"
-
-# ── Check: external drive ─────────────────────────────────────────────────────
-print_header "External drive"
-
+# ── Step 1: Ask for configuration ─────────────────────────────────────────────
 echo ""
-echo -e "  AudioVault stores books on an external USB drive, not the SD card."
-echo -e "  The drive must already be connected to your Raspberry Pi."
+echo -e "${BOLD}── Configuration ──────────────────────────────────────────${NC}"
 echo ""
 
-print_step "Listing connected drives..."
-lsblk -o NAME,SIZE,TYPE,MOUNTPOINT | grep -v "loop"
-
+ask "Where are your audiobooks stored?"
+ask "This is the directory that contains one subfolder per book."
+ask "Example: /mnt/wd/audiobooks  or  /mnt/audiodrive/audiobooks"
 echo ""
-print_info "Look for your external drive in the list above (usually sda or sdb)."
-print_warning "Do not use the drive that contains your OS (usually mmcblk0)."
+read -r -p "  Audiobooks path: " BOOKS_DIR
 
-ask "Enter the partition name of your external drive (e.g. sda1)" "sda1"
-DRIVE_PARTITION="$REPLY"
+# Strip trailing slash
+BOOKS_DIR="${BOOKS_DIR%/}"
 
-# Verify it exists
-if ! lsblk "/dev/$DRIVE_PARTITION" > /dev/null 2>&1; then
-    print_error "/dev/$DRIVE_PARTITION not found. Please check the drive name and try again."
-    exit 1
+if [ ! -d "$BOOKS_DIR" ]; then
+  warn "Directory '$BOOKS_DIR' does not exist."
+  read -r -p "  Create it now? [Y/n]: " CREATE_DIR
+  if [[ "$CREATE_DIR" =~ ^[Nn] ]]; then
+    error "Audiobooks directory is required. Aborting."
+  fi
+  mkdir -p "$BOOKS_DIR"
+  chown "$REAL_USER":"$REAL_USER" "$BOOKS_DIR"
+  ok "Created $BOOKS_DIR"
 fi
 
-print_success "Found /dev/$DRIVE_PARTITION"
-
-# Get UUID
-print_step "Reading UUID for /dev/$DRIVE_PARTITION..."
-DRIVE_UUID=$(sudo blkid -s UUID -o value "/dev/$DRIVE_PARTITION")
-
-if [ -z "$DRIVE_UUID" ]; then
-    print_error "Could not read UUID. Make sure the drive is formatted (ext4 or ntfs)."
-    exit 1
-fi
-
-print_success "UUID: $DRIVE_UUID"
-
-# Filesystem type
-DRIVE_FS=$(sudo blkid -s TYPE -o value "/dev/$DRIVE_PARTITION")
-print_info "Filesystem type: $DRIVE_FS"
-
-if [ "$DRIVE_FS" = "ntfs" ]; then
-    print_warning "NTFS detected. Will install ntfs-3g driver automatically."
-    FSTAB_FS="ntfs-3g"
-else
-    FSTAB_FS="ext4"
-fi
-
-# ── Questions ─────────────────────────────────────────────────────────────────
-print_header "Configuration"
-
-echo ""
-echo -e "  Answer the following questions to configure your setup."
-echo -e "  Press Enter to accept the default value shown in brackets."
-echo ""
-
-ask "Where should the drive be mounted?" "/mnt/audiodrive"
-MOUNT_POINT="$REPLY"
-
-ask "Name of the audiobooks folder on the drive" "audiobooks"
-BOOKS_FOLDER="$REPLY"
-
-BOOKS_DIR="$MOUNT_POINT/$BOOKS_FOLDER"
 DATA_DIR="/srv/audiobook-data"
 
 echo ""
-echo -e "  ${BOLD}Summary of your configuration:${RESET}"
-echo -e "  ${CYAN}Drive:${RESET}         /dev/$DRIVE_PARTITION  (UUID: $DRIVE_UUID)"
-echo -e "  ${CYAN}Mount point:${RESET}   $MOUNT_POINT"
-echo -e "  ${CYAN}Books folder:${RESET}  $BOOKS_DIR"
-echo -e "  ${CYAN}Data folder:${RESET}   $DATA_DIR  (on SD card — progress, library.json)"
+info "Summary:"
+echo "  Audiobooks : $BOOKS_DIR"
+echo "  Data dir   : $DATA_DIR"
+echo "  nginx port : 8081"
+echo "  API port   : 5000 (internal only)"
 echo ""
-
-if ! confirm "Does this look correct?"; then
-    echo ""
-    echo "  Setup cancelled. Run this script again to start over."
-    exit 0
+read -r -p "  Continue? [Y/n]: " CONFIRM
+if [[ "$CONFIRM" =~ ^[Nn] ]]; then
+  echo "Aborted."
+  exit 0
 fi
 
-# ── Install packages ──────────────────────────────────────────────────────────
-print_header "Installing packages"
+# ── Step 2: Install packages ───────────────────────────────────────────────────
+echo ""
+echo -e "${BOLD}── Installing packages ────────────────────────────────────${NC}"
+echo ""
+info "Running apt update..."
+apt update -qq
 
-print_step "Updating package list..."
-sudo apt update -q
+info "Installing nginx, python3, ffmpeg, inotify-tools..."
+apt install -y nginx python3 python3-pip ffmpeg inotify-tools > /dev/null
+ok "System packages installed"
 
-PACKAGES="nginx python3 python3-pip ffmpeg inotify-tools"
-if [ "$DRIVE_FS" = "ntfs" ]; then
-    PACKAGES="$PACKAGES ntfs-3g"
-fi
-
-print_step "Installing: $PACKAGES"
-sudo apt install -y $PACKAGES
-
-print_step "Installing Python packages..."
+info "Installing Python packages (flask, python-dotenv)..."
 pip3 install flask python-dotenv --break-system-packages -q
+ok "Python packages installed"
 
-print_success "All packages installed"
+# ── Step 3: Create data directory and config ───────────────────────────────────
+echo ""
+echo -e "${BOLD}── Creating data directory ────────────────────────────────${NC}"
+echo ""
+mkdir -p "$DATA_DIR"
+chown "$REAL_USER":"$REAL_USER" "$DATA_DIR"
+ok "Created $DATA_DIR"
 
-# ── Mount drive ───────────────────────────────────────────────────────────────
-print_header "Mounting external drive"
-
-print_step "Creating mount point: $MOUNT_POINT"
-sudo mkdir -p "$MOUNT_POINT"
-
-# Check if already in fstab
-if grep -q "$DRIVE_UUID" /etc/fstab; then
-    print_info "Drive already in /etc/fstab — skipping."
-else
-    print_step "Adding drive to /etc/fstab for automatic mounting on boot..."
-    echo "UUID=$DRIVE_UUID  $MOUNT_POINT  $FSTAB_FS  defaults,nofail  0  2" | sudo tee -a /etc/fstab > /dev/null
-    print_success "Added to /etc/fstab"
-fi
-
-print_step "Mounting drive now..."
-sudo mount -a
-print_success "Drive mounted at $MOUNT_POINT"
-
-# ── Create folders and config ─────────────────────────────────────────────────
-print_header "Creating folders and config"
-
-print_step "Creating books folder: $BOOKS_DIR"
-mkdir -p "$BOOKS_DIR"
-
-print_step "Creating data folder: $DATA_DIR"
-sudo mkdir -p "$DATA_DIR"
-sudo chown -R "$USER:$USER" "$DATA_DIR"
-
-print_step "Writing config.env..."
-cat > "$DATA_DIR/config.env" << ENVEOF
-# AudioVault configuration
-# Generated by install.sh on $(date)
-
+# config.env
+cat > "$DATA_DIR/config.env" << CONFEOF
 # Path to the folder containing your audiobook subfolders.
 BOOKS_DIR=$BOOKS_DIR
 
 # Path where library.json and progress data are stored.
 DATA_DIR=$DATA_DIR
-ENVEOF
-print_success "config.env written"
+CONFEOF
+ok "Created config.env"
 
-# ── Flask API ─────────────────────────────────────────────────────────────────
-print_header "Creating Flask API"
-
-print_step "Writing audiobook_api.py..."
-cat > "$DATA_DIR/audiobook_api.py" << 'PYEOF'
+# ── Step 4: Create Flask API ───────────────────────────────────────────────────
+echo ""
+echo -e "${BOLD}── Creating Flask API ─────────────────────────────────────${NC}"
+echo ""
+cat > "$DATA_DIR/audiobook_api.py" << 'APIEOF'
 from flask import Flask, jsonify, request
 import json, os
 from dotenv import load_dotenv
@@ -281,23 +152,173 @@ def post_progress(profile, book_id):
         json.dump(data, f)
     return jsonify({"ok": True})
 
+@app.route("/api/backup", methods=["GET"])
+def backup():
+    progress_dir = f"{DATA_DIR}/progress"
+    result = {}
+    if os.path.exists(progress_dir):
+        for profile in os.listdir(progress_dir):
+            result[profile] = {}
+            profile_dir = f"{progress_dir}/{profile}"
+            if os.path.isdir(profile_dir):
+                for fname in os.listdir(profile_dir):
+                    if fname.endswith(".json"):
+                        book_id = fname[:-5]
+                        result[profile][book_id] = json.load(
+                            open(f"{profile_dir}/{fname}")
+                        )
+    return jsonify(result)
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-PYEOF
-print_success "audiobook_api.py written"
+APIEOF
+ok "Created audiobook_api.py"
 
-# ── nginx ─────────────────────────────────────────────────────────────────────
-print_header "Configuring nginx"
+# ── Step 5: Create library scanner (regen_library.sh) ─────────────────────────
+echo ""
+echo -e "${BOLD}── Creating library scanner ───────────────────────────────${NC}"
+echo ""
+cat > "$DATA_DIR/regen_library.sh" << 'REGENEOF'
+#!/bin/bash
+source /srv/audiobook-data/config.env
+OUTPUT="$DATA_DIR/library.json"
+LOCK_FILE="/tmp/regen_library.lock"
 
-print_step "Writing nginx config..."
-# Note: nginx cannot read config.env — paths are hardcoded here.
-# If you move your books folder in the future, update this file manually.
-sudo tee /etc/nginx/sites-available/audiobooks > /dev/null << NGINXEOF
+# Prevent concurrent runs
+if [ -f "$LOCK_FILE" ]; then
+    echo "[regen] Already running, skipping."
+    exit 0
+fi
+touch "$LOCK_FILE"
+trap 'rm -f "$LOCK_FILE"' EXIT
+
+slugify() {
+  echo "$1" | tr '[:upper:]' '[:lower:]' | \
+    sed 's/[^a-z0-9 _-]//g' | \
+    sed 's/[ _-]\+/-/g' | sed 's/^-\|-$//g'
+}
+
+echo "[regen] Scanning $BOOKS_DIR..."
+echo "[" > "$OUTPUT.tmp"
+first=true
+
+for dir in "$BOOKS_DIR"/*/; do
+  [ -d "$dir" ] || continue
+  title=$(basename "$dir")
+  id=$(slugify "$title")
+  cover=""
+
+  for img in "$dir"*.jpg "$dir"*.png "$dir"*.jpeg "$dir"*.JPG "$dir"*.PNG; do
+    [ -f "$img" ] && cover=$(basename "$img") && break
+  done
+
+  tracks="["
+  track_first=true
+  for f in $(ls "$dir"*.mp3 "$dir"*.m4b "$dir"*.m4a \
+                 "$dir"*.flac "$dir"*.ogg "$dir"*.wav 2>/dev/null | sort); do
+    filename=$(basename "$f")
+    dur=$(ffprobe -v quiet -show_entries \
+      format=duration -of csv=p=0 "$f" 2>/dev/null | cut -d. -f1)
+    dur_ms=$(( ${dur:-0} * 1000 ))
+    [ "$track_first" = true ] && track_first=false || tracks="$tracks,"
+    tracks="$tracks{\"file\":\"$filename\",\"durationMs\":$dur_ms}"
+  done
+  tracks="$tracks]"
+
+  [ "$first" = true ] && first=false || echo "," >> "$OUTPUT.tmp"
+  cat >> "$OUTPUT.tmp" << JSON
+{
+  "id": "$id",
+  "title": "$title",
+  "coverUrl": "$cover",
+  "tracks": $tracks
+}
+JSON
+done
+
+echo "]" >> "$OUTPUT.tmp"
+
+# Atomically replace the output file
+mv "$OUTPUT.tmp" "$OUTPUT"
+
+# Fix ownership so nginx (www-data) can serve the file
+sudo /usr/bin/chown www-data:www-data "$OUTPUT"
+sudo /usr/bin/chmod 664 "$OUTPUT"
+
+echo "[regen] Done. Library written to $OUTPUT"
+REGENEOF
+
+chmod +x "$DATA_DIR/regen_library.sh"
+ok "Created regen_library.sh"
+
+# ── Step 6: Create folder watcher (audiobook-watch.sh) ────────────────────────
+echo ""
+echo -e "${BOLD}── Creating folder watcher ────────────────────────────────${NC}"
+echo ""
+cat > "$DATA_DIR/audiobook-watch.sh" << 'WATCHEOF'
+#!/bin/bash
+source /srv/audiobook-data/config.env
+
+echo "[watch] Watching $BOOKS_DIR for changes..."
+
+while true; do
+    # Wait for any filesystem event in the books folder
+    inotifywait -r -e modify,create,delete,moved_to,moved_from \
+        "$BOOKS_DIR" 2>/dev/null
+
+    # Wait for activity to settle before regenerating.
+    # Resets every time a new event arrives — prevents regen mid-upload.
+    echo "[watch] Change detected. Waiting for activity to settle..."
+    while inotifywait -r -e modify,create,delete,moved_to,moved_from \
+        -t 25 "$BOOKS_DIR" 2>/dev/null; do
+        echo "[watch] Still active, resetting settle timer..."
+    done
+
+    echo "[watch] Activity settled. Regenerating library..."
+    /srv/audiobook-data/regen_library.sh
+    echo "[watch] Regeneration complete."
+done
+WATCHEOF
+
+chmod +x "$DATA_DIR/audiobook-watch.sh"
+ok "Created audiobook-watch.sh"
+
+# ── Step 7: Configure www-data sudoers ────────────────────────────────────────
+echo ""
+echo -e "${BOLD}── Configuring permissions ────────────────────────────────${NC}"
+echo ""
+
+# The regen script runs as www-data (via the watch service) and needs to
+# fix ownership of library.json after every scan so nginx can serve it.
+# We grant www-data NOPASSWD sudo for only these exact commands.
+cat > /etc/sudoers.d/www-data-chown << SUDOEOF
+www-data ALL=(root) NOPASSWD: /usr/bin/chown www-data:www-data /srv/audiobook-data/library.json
+www-data ALL=(root) NOPASSWD: /usr/bin/chown -R www-data:www-data $BOOKS_DIR
+www-data ALL=(root) NOPASSWD: /usr/bin/chmod 644 /srv/audiobook-data/library.json
+www-data ALL=(root) NOPASSWD: /usr/bin/chmod 664 /srv/audiobook-data/library.json
+www-data ALL=(root) NOPASSWD: /usr/bin/chmod -R 755 $BOOKS_DIR
+SUDOEOF
+
+chmod 440 /etc/sudoers.d/www-data-chown
+
+# Validate sudoers syntax
+if visudo -c -f /etc/sudoers.d/www-data-chown > /dev/null 2>&1; then
+  ok "sudoers configured for www-data"
+else
+  error "sudoers syntax error — check /etc/sudoers.d/www-data-chown"
+fi
+
+# ── Step 8: Configure nginx ────────────────────────────────────────────────────
+echo ""
+echo -e "${BOLD}── Configuring nginx ──────────────────────────────────────${NC}"
+echo ""
+
+cat > /etc/nginx/sites-available/audiobooks << NGINXEOF
 server {
     listen 8081;
 
     location /library.json {
-        alias $DATA_DIR/library.json;
+        alias /srv/audiobook-data/library.json;
     }
 
     location / {
@@ -311,194 +332,104 @@ server {
 }
 NGINXEOF
 
-print_step "Enabling nginx site..."
-sudo ln -sf /etc/nginx/sites-available/audiobooks /etc/nginx/sites-enabled/audiobooks
-sudo nginx -t
-sudo systemctl reload nginx
-print_success "nginx configured"
+# Enable the site
+ln -sf /etc/nginx/sites-available/audiobooks \
+       /etc/nginx/sites-enabled/audiobooks
 
-# ── regen_library.sh ──────────────────────────────────────────────────────────
-print_header "Creating library scanner"
+# Test nginx config
+if nginx -t > /dev/null 2>&1; then
+  systemctl reload nginx
+  ok "nginx configured and reloaded"
+else
+  error "nginx config test failed — check /etc/nginx/sites-available/audiobooks"
+fi
 
-print_step "Writing regen_library.sh..."
-cat > "$DATA_DIR/regen_library.sh" << 'REGENEOF'
-#!/bin/bash
-source /srv/audiobook-data/config.env
-OUTPUT="$DATA_DIR/library.json"
+# ── Step 9: Create systemd services ───────────────────────────────────────────
+echo ""
+echo -e "${BOLD}── Creating systemd services ──────────────────────────────${NC}"
+echo ""
 
-slugify() {
-  echo "$1" | tr '[:upper:]' '[:lower:]' | \
-    sed 's/[^a-z0-9 _-]//g' | \
-    sed 's/[ _-]\+/-/g' | sed 's/^-\|-$//g'
-}
-
-echo "[" > "$OUTPUT"
-first=true
-
-for dir in "$BOOKS_DIR"/*/; do
-  [ -d "$dir" ] || continue
-  title=$(basename "$dir")
-  id=$(slugify "$title")
-  cover=""
-
-  for img in "$dir"*.jpg "$dir"*.png "$dir"*.jpeg; do
-    [ -f "$img" ] && cover=$(basename "$img") && break
-  done
-
-  tracks="["
-  track_first=true
-  for f in $(ls "$dir"*.mp3 "$dir"*.m4b "$dir"*.m4a \
-                 "$dir"*.flac "$dir"*.ogg 2>/dev/null | sort); do
-    filename=$(basename "$f")
-    dur=$(ffprobe -v quiet -show_entries \
-      format=duration -of csv=p=0 "$f" 2>/dev/null | cut -d. -f1)
-    dur_ms=$(( ${dur:-0} * 1000 ))
-    [ "$track_first" = true ] && track_first=false || tracks="$tracks,"
-    tracks="$tracks{\"file\":\"$filename\",\"durationMs\":$dur_ms}"
-  done
-  tracks="$tracks]"
-
-  [ "$first" = true ] && first=false || echo "," >> "$OUTPUT"
-  cat >> "$OUTPUT" << JSON
-{
-  "id": "$id",
-  "title": "$title",
-  "coverUrl": "$cover",
-  "tracks": $tracks
-}
-JSON
-done
-
-echo "]" >> "$OUTPUT"
-REGENEOF
-
-chmod +x "$DATA_DIR/regen_library.sh"
-print_success "regen_library.sh written"
-
-# ── audiobook-watch.sh ────────────────────────────────────────────────────────
-print_header "Creating folder watcher"
-
-print_step "Writing audiobook-watch.sh..."
-cat > "$DATA_DIR/audiobook-watch.sh" << 'WATCHEOF'
-#!/bin/bash
-source /srv/audiobook-data/config.env
-
-echo "Watching $BOOKS_DIR for changes..."
-
-while true; do
-    inotifywait -r -e modify,create,delete,moved_to,moved_from \
-        "$BOOKS_DIR" 2>/dev/null
-
-    echo "Change detected. Waiting for activity to settle..."
-    while inotifywait -r -e modify,create,delete,moved_to,moved_from \
-        -t 25 "$BOOKS_DIR" 2>/dev/null; do
-        echo "Still active, resetting settle timer..."
-    done
-
-    echo "Activity settled. Regenerating library..."
-    /srv/audiobook-data/regen_library.sh
-    echo "Library regenerated."
-done
-WATCHEOF
-
-chmod +x "$DATA_DIR/audiobook-watch.sh"
-print_success "audiobook-watch.sh written"
-
-# ── systemd services ──────────────────────────────────────────────────────────
-print_header "Setting up systemd services"
-
-print_step "Writing audiobook-api.service..."
-sudo tee /etc/systemd/system/audiobook-api.service > /dev/null << SVCEOF
+cat > /etc/systemd/system/audiobook-api.service << SVCEOF
 [Unit]
 Description=AudioVault Flask API
 After=network.target
 
 [Service]
-EnvironmentFile=$DATA_DIR/config.env
-ExecStart=/usr/bin/python3 $DATA_DIR/audiobook_api.py
-WorkingDirectory=$DATA_DIR
+EnvironmentFile=/srv/audiobook-data/config.env
+ExecStart=/usr/bin/python3 /srv/audiobook-data/audiobook_api.py
+WorkingDirectory=/srv/audiobook-data
 Restart=always
-User=$USER
+User=$REAL_USER
 
 [Install]
 WantedBy=multi-user.target
 SVCEOF
 
-print_step "Writing audiobook-watcher.service..."
-sudo tee /etc/systemd/system/audiobook-watcher.service > /dev/null << SVCEOF
+cat > /etc/systemd/system/audiobook-watch.service << SVCEOF
 [Unit]
 Description=AudioVault Library Watcher
 After=network.target
 
 [Service]
-EnvironmentFile=$DATA_DIR/config.env
-ExecStart=/bin/bash $DATA_DIR/audiobook-watch.sh
+EnvironmentFile=/srv/audiobook-data/config.env
+ExecStart=/bin/bash /srv/audiobook-data/audiobook-watch.sh
 Restart=always
-User=$USER
+User=$REAL_USER
 
 [Install]
 WantedBy=multi-user.target
 SVCEOF
 
-print_step "Enabling and starting services..."
-sudo systemctl daemon-reload
-sudo systemctl enable audiobook-api audiobook-watcher
-sudo systemctl start audiobook-api audiobook-watcher
-print_success "Services started"
+systemctl daemon-reload
+systemctl enable audiobook-api audiobook-watch > /dev/null 2>&1
+ok "Services created and enabled"
 
-# ── Initial library scan ──────────────────────────────────────────────────────
-print_header "Initial library scan"
+# ── Step 10: First library scan ────────────────────────────────────────────────
+echo ""
+echo -e "${BOLD}── Running first library scan ─────────────────────────────${NC}"
+echo ""
+warn "This may take a few minutes for large libraries (ffprobe reads every file)."
+echo ""
 
-print_info "Scanning your books folder for the first time..."
-print_warning "This may take a while if you have many books."
-"$DATA_DIR/regen_library.sh"
-print_success "library.json generated"
+bash "$DATA_DIR/regen_library.sh"
 
-# ── Verify ────────────────────────────────────────────────────────────────────
-print_header "Verifying installation"
+# ── Step 11: Start services ────────────────────────────────────────────────────
+echo ""
+echo -e "${BOLD}── Starting services ──────────────────────────────────────${NC}"
+echo ""
+systemctl start audiobook-api audiobook-watch
 
-sleep 2  # Give services a moment to start
+sleep 2
 
 API_STATUS=$(systemctl is-active audiobook-api)
-WATCHER_STATUS=$(systemctl is-active audiobook-watcher)
-NGINX_STATUS=$(systemctl is-active nginx)
+WATCH_STATUS=$(systemctl is-active audiobook-watch)
 
 if [ "$API_STATUS" = "active" ]; then
-    print_success "audiobook-api: running"
+  ok "audiobook-api is running"
 else
-    print_error "audiobook-api: $API_STATUS — run 'sudo journalctl -u audiobook-api -n 20' to debug"
+  warn "audiobook-api failed to start — check: sudo journalctl -u audiobook-api -n 20"
 fi
 
-if [ "$WATCHER_STATUS" = "active" ]; then
-    print_success "audiobook-watcher: running"
+if [ "$WATCH_STATUS" = "active" ]; then
+  ok "audiobook-watch is running"
 else
-    print_error "audiobook-watcher: $WATCHER_STATUS — run 'sudo journalctl -u audiobook-watcher -n 20' to debug"
+  warn "audiobook-watch failed to start — check: sudo journalctl -u audiobook-watch -n 20"
 fi
 
-if [ "$NGINX_STATUS" = "active" ]; then
-    print_success "nginx: running"
-else
-    print_error "nginx: $NGINX_STATUS — run 'sudo systemctl status nginx' to debug"
-fi
-
-# ── Done ──────────────────────────────────────────────────────────────────────
-LOCAL_IP=$(hostname -I | awk '{print $1}')
-
+# ── Done ───────────────────────────────────────────────────────────────────────
+PI_IP=$(hostname -I | awk '{print $1}')
 echo ""
-echo -e "${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-echo -e "${GREEN}${BOLD}  Setup complete!${RESET}"
-echo -e "${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}${BOLD}║           Installation complete!         ║${NC}"
+echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "  Your server address for the AudioVault app:"
+echo -e "  Test the server in your browser:"
+echo -e "  ${BOLD}http://${PI_IP}:8081/library.json${NC}"
 echo ""
-echo -e "  ${BOLD}  http://$LOCAL_IP:8081${RESET}"
+echo -e "  Then open AudioVault → Settings → Server and enter:"
+echo -e "  ${BOLD}http://${PI_IP}:8081${NC}"
 echo ""
-echo -e "  To verify the server is working, open this URL in a browser:"
-echo -e "  ${CYAN}  http://$LOCAL_IP:8081/library.json${RESET}"
-echo ""
-echo -e "  Books folder:  ${CYAN}$BOOKS_DIR${RESET}"
-echo -e "  Add books there and the library will update automatically."
-echo ""
-echo -e "  If you run into issues, the setup guide is available at:"
-echo -e "  ${CYAN}  https://dejnastosic986.github.io/audiobook-player${RESET}"
+echo -e "  Service status:"
+echo -e "    sudo systemctl status audiobook-api"
+echo -e "    sudo systemctl status audiobook-watch"
 echo ""
