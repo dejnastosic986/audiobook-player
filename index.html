@@ -35,7 +35,6 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* ── NOISE TEXTURE OVERLAY ── */
     body::before {
       content: '';
       position: fixed;
@@ -46,7 +45,6 @@
       opacity: 0.4;
     }
 
-    /* ── NAV ── */
     nav {
       position: sticky;
       top: 0;
@@ -87,7 +85,6 @@
 
     .nav-links a:hover { color: var(--text); }
 
-    /* ── HERO ── */
     .hero {
       position: relative;
       min-height: 92vh;
@@ -159,7 +156,6 @@
 
     .badge span { color: var(--accent2); }
 
-    /* Decorative vinyl record */
     .vinyl {
       position: absolute;
       right: -80px;
@@ -188,7 +184,6 @@
       border: 1px solid #2a2a2e;
     }
 
-    /* ── SECTIONS ── */
     section {
       max-width: 860px;
       margin: 0 auto;
@@ -230,7 +225,6 @@
 
     p strong { color: var(--text); font-weight: 500; }
 
-    /* ── MODES GRID ── */
     .modes-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -255,7 +249,6 @@
 
     .mode-card h3 { margin-bottom: 0.5rem; }
 
-    /* ── STEP LIST ── */
     .steps {
       counter-reset: step;
       margin-top: 2.5rem;
@@ -294,7 +287,6 @@
 
     .step-body h3 { font-size: 1rem; margin-bottom: 0.4rem; }
 
-    /* ── CODE BLOCKS ── */
     pre {
       background: var(--code-bg);
       border: 1px solid var(--border);
@@ -329,7 +321,6 @@
       margin-bottom: 0.5rem;
     }
 
-    /* ── CALLOUTS ── */
     .callout {
       border-left: 3px solid var(--accent);
       background: var(--bg2);
@@ -345,7 +336,6 @@
 
     .callout p { margin: 0; color: var(--text); }
 
-    /* ── FOLDER TREE ── */
     .tree {
       background: var(--code-bg);
       border: 1px solid var(--border);
@@ -362,7 +352,6 @@
     .tree .file { color: var(--accent2); }
     .tree .comment { color: var(--muted); font-style: italic; }
 
-    /* ── FORMAT TAGS ── */
     .formats {
       display: flex;
       flex-wrap: wrap;
@@ -380,7 +369,6 @@
       color: var(--accent2);
     }
 
-    /* ── FOOTER ── */
     footer {
       border-top: 1px solid var(--border);
       padding: 2rem;
@@ -389,7 +377,6 @@
       font-size: 0.82rem;
     }
 
-    /* ── ANIMATIONS ── */
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(16px); }
       to   { opacity: 1; transform: translateY(0); }
@@ -400,7 +387,6 @@
       to   { transform: translateY(-50%) rotate(360deg); }
     }
 
-    /* ── RESPONSIVE ── */
     @media (max-width: 640px) {
       .modes-grid { grid-template-columns: 1fr; }
       .vinyl { display: none; }
@@ -412,7 +398,6 @@
 </head>
 <body>
 
-<!-- ── NAV ── -->
 <nav>
   <a class="nav-logo" href="#">AudioBook Player</a>
   <ul class="nav-links">
@@ -423,7 +408,6 @@
   </ul>
 </nav>
 
-<!-- ── HERO ── -->
 <div class="hero">
   <div class="vinyl"></div>
   <p class="hero-eyebrow">No DRM · No subscriptions · 100% Free (and always will be)</p>
@@ -560,7 +544,6 @@
     comfort with a terminal.
   </p>
 
-  <!-- ── INSTALLER OPTION ── -->
   <div style="
     background: var(--bg2);
     border: 1px solid var(--accent2);
@@ -586,7 +569,7 @@ nano install.sh</code></pre>
     <div class="code-label">terminal — run when ready</div>
     <pre><code>bash install.sh</code></pre>
     <p style="margin-top: 0.75rem;">Or run it directly in one command:</p>
-    <pre><code>bash <(curl -s https://raw.githubusercontent.com/dejnastosic986/audiobook-player/main/install.sh)</code></pre>
+    <pre><code>bash &lt;(curl -s https://raw.githubusercontent.com/dejnastosic986/audiobook-player/main/install.sh)</code></pre>
     <div class="callout" style="margin-top: 1.25rem; margin-bottom: 0;">
       <p>
         💡 The installer does the same things described in the step-by-step guide below —
@@ -596,7 +579,6 @@ nano install.sh</code></pre>
     </div>
   </div>
 
-  <!-- ── MANUAL GUIDE ── -->
   <p style="margin-bottom: 0.25rem;">Prefer to do it yourself? Follow the steps below.</p>
 
   <div class="callout warning" style="margin: 1.5rem 0;">
@@ -610,6 +592,7 @@ nano install.sh</code></pre>
 
   <div class="steps">
 
+    <!-- STEP 1 -->
     <div class="step">
       <div class="step-num">1</div>
       <div class="step-body">
@@ -633,6 +616,7 @@ nano install.sh</code></pre>
       </div>
     </div>
 
+    <!-- STEP 2 -->
     <div class="step">
       <div class="step-num">2</div>
       <div class="step-body">
@@ -644,12 +628,12 @@ nano install.sh</code></pre>
           and connect to your Pi:
         </p>
         <div class="code-label">terminal — replace "pi" with your username if you chose a different one</div>
-        <pre><code>ssh <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="0b7b624b6a7e6f6264786e797d6e79256764686a67">[email&#160;protected]</a></code></pre>
+        <pre><code>ssh pi@audioserver.local</code></pre>
         <p>
           If that doesn't work, find your Pi's IP address from your router's admin page
           and connect directly:
         </p>
-        <pre><code>ssh <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="3d4d547d0c040f130c0b0513451345">[email&#160;protected]</a></code></pre>
+        <pre><code>ssh pi@192.168.x.x</code></pre>
         <p>
           Type <code>yes</code> when asked about the fingerprint, then enter your password.
           You won't see any characters while typing — that's normal.
@@ -661,6 +645,7 @@ nano install.sh</code></pre>
       </div>
     </div>
 
+    <!-- STEP 3 -->
     <div class="step">
       <div class="step-num">3</div>
       <div class="step-body">
@@ -671,6 +656,7 @@ pip3 install flask --break-system-packages</code></pre>
       </div>
     </div>
 
+    <!-- STEP 4 -->
     <div class="step">
       <div class="step-num">4</div>
       <div class="step-body">
@@ -724,6 +710,7 @@ sudo nano /etc/fstab</code></pre>
       </div>
     </div>
 
+    <!-- STEP 5 -->
     <div class="step">
       <div class="step-num">5</div>
       <div class="step-body">
@@ -771,6 +758,7 @@ mkdir -p /mnt/audiodrive/audiobooks</code></pre>
       </div>
     </div>
 
+    <!-- STEP 6 -->
     <div class="step">
       <div class="step-num">6</div>
       <div class="step-body">
@@ -791,6 +779,7 @@ mkdir -p /mnt/audiodrive/audiobooks</code></pre>
       </div>
     </div>
 
+    <!-- STEP 7 -->
     <div class="step">
       <div class="step-num">7</div>
       <div class="step-body">
@@ -830,10 +819,10 @@ def post_progress(profile, book_id):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)</code></pre>
-
       </div>
     </div>
 
+    <!-- STEP 8 -->
     <div class="step">
       <div class="step-num">8</div>
       <div class="step-body">
@@ -874,8 +863,58 @@ sudo nginx -t && sudo systemctl reload nginx</code></pre>
       </div>
     </div>
 
+    <!-- STEP 9 — NEW: www-data permissions -->
     <div class="step">
       <div class="step-num">9</div>
+      <div class="step-body">
+        <h3>Fix file permissions for nginx</h3>
+        <p>
+          nginx serves files as the <code>www-data</code> user. The library scanner
+          also needs to set <code>www-data</code> as the owner of
+          <code>library.json</code> after every regeneration — otherwise nginx
+          returns a 403 error and the app cannot load the book list.
+        </p>
+        <p>
+          Grant <code>www-data</code> the ability to run only the exact
+          <code>chown</code> and <code>chmod</code> commands it needs — nothing else:
+        </p>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo visudo -f /etc/sudoers.d/www-data-chown</code></pre>
+        <p>Paste the following content:</p>
+        <div class="code-label">/etc/sudoers.d/www-data-chown</div>
+        <pre><code>www-data ALL=(root) NOPASSWD: /usr/bin/chown www-data:www-data /srv/audiobook-data/library.json
+www-data ALL=(root) NOPASSWD: /usr/bin/chown -R www-data:www-data /mnt/audiodrive/audiobooks
+www-data ALL=(root) NOPASSWD: /usr/bin/chmod 644 /srv/audiobook-data/library.json
+www-data ALL=(root) NOPASSWD: /usr/bin/chmod 664 /srv/audiobook-data/library.json
+www-data ALL=(root) NOPASSWD: /usr/bin/chmod -R 755 /mnt/audiodrive/audiobooks</code></pre>
+        <p>Verify the syntax before saving:</p>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo visudo -c -f /etc/sudoers.d/www-data-chown</code></pre>
+        <p>You should see <code>parsed OK</code>. If not, re-open the file and check for typos.</p>
+        <div class="callout">
+          <p>
+            💡 <code>visudo</code> uses <code>nano</code> by default —
+            <strong>Ctrl+O</strong> to save, <strong>Ctrl+X</strong> to exit.
+            The <code>NOPASSWD</code> rule is intentionally narrow: it only covers
+            the exact commands listed. <code>www-data</code> cannot run anything
+            else with elevated privileges.
+          </p>
+        </div>
+        <div class="callout warning">
+          <p>
+            ⚠ The paths in this file must match your actual setup.
+            If you mounted your drive at a different location (e.g. <code>/mnt/wd</code>
+            instead of <code>/mnt/audiodrive</code>), update the paths here accordingly.
+            The paths must match <strong>exactly</strong> — sudoers does not support wildcards
+            for directory arguments.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 10 (was 9) -->
+    <div class="step">
+      <div class="step-num">10</div>
       <div class="step-body">
         <h3>Create the library scanner</h3>
         <p>
@@ -924,7 +963,7 @@ for dir in "$BOOKS_DIR"/*/; do
   tracks="$tracks]"
 
   [ "$first" = true ] && first=false || echo "," >> "$OUTPUT"
-  cat >> "$OUTPUT" <<JSON
+  cat >> "$OUTPUT" &lt;&lt;JSON
 {
   "id": "$id",
   "title": "$title",
@@ -934,7 +973,9 @@ for dir in "$BOOKS_DIR"/*/; do
 JSON
 done
 
-echo "]" >> "$OUTPUT"</code></pre>
+echo "]" >> "$OUTPUT"
+sudo /usr/bin/chown www-data:www-data "$OUTPUT"
+sudo /usr/bin/chmod 664 "$OUTPUT"</code></pre>
         <div class="code-label">terminal</div>
         <pre><code>chmod +x /srv/audiobook-data/regen_library.sh
 /srv/audiobook-data/regen_library.sh</code></pre>
@@ -942,15 +983,15 @@ echo "]" >> "$OUTPUT"</code></pre>
           <p>
             ⚠ The first run of this script can take a while if you have a large library
             or books with many short chapter files — it runs <code>ffprobe</code> on every
-            audio file to read its duration. Subsequent runs are faster as only new or
-            changed files are processed. Let it finish before starting the services.
+            audio file to read its duration. Let it finish before starting the services.
           </p>
         </div>
       </div>
     </div>
 
+    <!-- STEP 11 (was 10) -->
     <div class="step">
-      <div class="step-num">10</div>
+      <div class="step-num">11</div>
       <div class="step-body">
         <h3>Create the folder watcher script</h3>
         <p>
@@ -969,12 +1010,9 @@ source /srv/audiobook-data/config.env
 echo "Watching $BOOKS_DIR for changes..."
 
 while true; do
-    # Wait for any change event in the books folder
     inotifywait -r -e modify,create,delete,moved_to,moved_from \
         "$BOOKS_DIR" 2>/dev/null
 
-    # Disk activity detected — wait for it to settle before regenerating.
-    # This prevents regen from firing mid-upload when copying large files.
     echo "Change detected. Waiting for activity to settle..."
     while inotifywait -r -e modify,create,delete,moved_to,moved_from \
         -t 25 "$BOOKS_DIR" 2>/dev/null; do
@@ -997,8 +1035,9 @@ done</code></pre>
       </div>
     </div>
 
+    <!-- STEP 12 (was 11) -->
     <div class="step">
-      <div class="step-num">11</div>
+      <div class="step-num">12</div>
       <div class="step-body">
         <h3>Set up systemd services</h3>
         <p>
@@ -1020,7 +1059,7 @@ User=pi
 [Install]
 WantedBy=multi-user.target</code></pre>
 
-        <p class="code-label">/etc/systemd/system/audiobook-watcher.service</p>
+        <p class="code-label">/etc/systemd/system/audiobook-watch.service</p>
         <pre><code>[Unit]
 Description=AudioBook Library Watcher
 After=network.target
@@ -1036,23 +1075,24 @@ WantedBy=multi-user.target</code></pre>
 
         <div class="code-label">terminal — enable and start both services</div>
         <pre><code>sudo systemctl daemon-reload
-sudo systemctl enable audiobook-api audiobook-watcher
-sudo systemctl start audiobook-api audiobook-watcher</code></pre>
+sudo systemctl enable audiobook-api audiobook-watch
+sudo systemctl start audiobook-api audiobook-watch</code></pre>
 
         <div class="code-label">terminal — verify both services are running</div>
         <pre><code>sudo systemctl status audiobook-api
-sudo systemctl status audiobook-watcher</code></pre>
+sudo systemctl status audiobook-watch</code></pre>
         <p>
           Both services should show <code>Active: active (running)</code> in green.
           If either shows <code>failed</code>, check the logs for details:
         </p>
         <pre><code>sudo journalctl -u audiobook-api -n 30
-sudo journalctl -u audiobook-watcher -n 30</code></pre>
+sudo journalctl -u audiobook-watch -n 30</code></pre>
       </div>
     </div>
 
+    <!-- STEP 13 (was 12) -->
     <div class="step">
-      <div class="step-num">12</div>
+      <div class="step-num">13</div>
       <div class="step-body">
         <h3>Connect the app</h3>
         <p>Find your Raspberry Pi's local IP address:</p>
@@ -1156,3 +1196,12 @@ sudo journalctl -u audiobook-watcher -n 30</code></pre>
     If you want to share them with your family — without asking anyone's permission
     or jumping through hoops — and if you're not afraid of a bit of technical footwork,
     then this audiobook player is exactly what you need!
+  </p>
+</section>
+
+<footer>
+  <p>AudioVault · Free &amp; open source · No DRM · No subscriptions</p>
+</footer>
+
+</body>
+</html>
