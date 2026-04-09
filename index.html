@@ -628,12 +628,12 @@ nano install.sh</code></pre>
           and connect to your Pi:
         </p>
         <div class="code-label">terminal — replace "pi" with your username if you chose a different one</div>
-        <pre><code>ssh pi@audioserver.local</code></pre>
+        <pre><code>ssh <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="e4948da48591808d8b978196928196ca888b878588">[email&#160;protected]</a></code></pre>
         <p>
           If that doesn't work, find your Pi's IP address from your router's admin page
           and connect directly:
         </p>
-        <pre><code>ssh pi@192.168.x.x</code></pre>
+        <pre><code>ssh <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="cabaa38afbf3f8e4fbfcf2e4b2e4b2">[email&#160;protected]</a></code></pre>
         <p>
           Type <code>yes</code> when asked about the fingerprint, then enter your password.
           You won't see any characters while typing — that's normal.
@@ -912,78 +912,148 @@ www-data ALL=(root) NOPASSWD: /usr/bin/chmod -R 755 /mnt/audiodrive/audiobooks</
       </div>
     </div>
 
-    <!-- STEP 10 (was 9) -->
+    <!-- STEP 10 -->
     <div class="step">
       <div class="step-num">10</div>
       <div class="step-body">
         <h3>Create the library scanner</h3>
         <p>
-          This script reads the books path from <code>config.env</code> and
-          regenerates <code>library.json</code> automatically whenever
-          you add or remove books.
+          This script scans your audiobook folders and generates
+          <code>library.json</code> — the file the app reads to show
+          your book list. It uses a duration cache so re-runs after
+          adding one book are fast.
         </p>
         <div class="code-label">terminal</div>
-        <pre><code>sudo nano /srv/audiobook-data/regen_library.sh</code></pre>
+        <pre><code>sudo nano /srv/audiobook-api/regen_library.sh</code></pre>
         <p>Paste the following content:</p>
         <div class="code-label">regen_library.sh</div>
-        <pre><code>#!/bin/bash
-source /srv/audiobook-data/config.env
-OUTPUT="$DATA_DIR/library.json"
+        <pre><code>#!/usr/bin/env bash
+set -euo pipefail
 
-slugify() {
-  echo "$1" | tr '[:upper:]' '[:lower:]' | \
-    sed 's/[^a-z0-9 _-]//g' | \
-    sed 's/[ _-]\+/-/g' | sed 's/^-\|-$//g'
-}
+CONFIG_FILE="/srv/audiobook-api/config.env"
+[ -f "$CONFIG_FILE" ] || { echo "ERROR: config.env not found"; exit 1; }
+source "$CONFIG_FILE"
+[ -n "${AUDIOBOOKS_DIR:-}" ] || { echo "ERROR: AUDIOBOOKS_DIR not set"; exit 1; }
 
-echo "[" > "$OUTPUT"
-first=true
+DATA_DIR="/srv/audiobook-data"
+OUT="$DATA_DIR/library.json"
+mkdir -p "$DATA_DIR"
+umask 0002
 
-for dir in "$BOOKS_DIR"/*/; do
-  [ -d "$dir" ] || continue
-  title=$(basename "$dir")
-  id=$(slugify "$title")
-  cover=""
+echo "[regen] Scanning: $AUDIOBOOKS_DIR"
 
-  for img in "$dir"*.jpg "$dir"*.png "$dir"*.jpeg; do
-    [ -f "$img" ] && cover=$(basename "$img") && break
-  done
+AUDIOBOOKS_DIR="$AUDIOBOOKS_DIR" OUT_FILE="$OUT" python3 - &lt;&lt;'PY'
+import os, sys, json, subprocess, tempfile, shutil
 
-  tracks="["
-  track_first=true
-  for f in $(ls "$dir"*.mp3 "$dir"*.m4b "$dir"*.m4a \
-                 "$dir"*.flac "$dir"*.ogg 2>/dev/null | sort); do
-    filename=$(basename "$f")
-    dur=$(ffprobe -v quiet -show_entries \
-      format=duration -of csv=p=0 "$f" 2>/dev/null | cut -d. -f1)
-    dur_ms=$(( ${dur:-0} * 1000 ))
-    [ "$track_first" = true ] && track_first=false || tracks="$tracks,"
-    tracks="$tracks{\"file\":\"$filename\",\"durationMs\":$dur_ms}"
-  done
-  tracks="$tracks]"
+AUDIOBOOKS_DIR = os.environ["AUDIOBOOKS_DIR"]
+OUT_FILE       = os.environ["OUT_FILE"]
+AUDIO_EXT      = (".mp3", ".m4b", ".m4a", ".wav", ".ogg", ".flac")
+IMAGE_EXT      = (".jpg", ".jpeg", ".png")
+PREFERRED_COVERS = ("cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.png")
 
-  [ "$first" = true ] && first=false || echo "," >> "$OUTPUT"
-  cat >> "$OUTPUT" &lt;&lt;JSON
-{
-  "id": "$id",
-  "title": "$title",
-  "coverUrl": "$cover",
-  "tracks": $tracks
-}
-JSON
-done
+if not shutil.which("ffprobe"):
+    print("ERROR: ffprobe not found. Install with: sudo apt install ffmpeg")
+    sys.exit(1)
 
-echo "]" >> "$OUTPUT"
-sudo /usr/bin/chown www-data:www-data "$OUTPUT"
-sudo /usr/bin/chmod 664 "$OUTPUT"</code></pre>
+CACHE_FILE = os.path.join(os.path.dirname(OUT_FILE), "duration_cache.json")
+
+def load_cache():
+    try:
+        with open(CACHE_FILE, "r", encoding="utf-8") as f: return json.load(f)
+    except Exception: return {}
+
+def save_cache(cache):
+    try:
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(CACHE_FILE))
+        with os.fdopen(fd, "w", encoding="utf-8") as f: json.dump(cache, f)
+        os.replace(tmp, CACHE_FILE)
+    except Exception as e: print(f"[warn] Could not save cache: {e}")
+
+cache = load_cache()
+
+def slugify(s):
+    s = s.lower().strip()
+    out = []
+    for ch in s:
+        if ch.isalnum(): out.append(ch)
+        elif ch in (" ", "-", "_"): out.append("-")
+    slug = "".join(out)
+    while "--" in slug: slug = slug.replace("--", "-")
+    return slug.strip("-")
+
+def get_duration_ms(path):
+    try:
+        mtime = str(os.path.getmtime(path))
+        key = f"{path}:{mtime}"
+        if key in cache: return cache[key]
+    except OSError: pass
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", path],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+        txt = (r.stdout or "").strip()
+        if not txt or txt.lower() == "n/a": return 0
+        ms = int(float(txt) * 1000)
+        try:
+            mtime = str(os.path.getmtime(path))
+            cache[f"{path}:{mtime}"] = ms
+        except OSError: pass
+        return ms
+    except Exception: return 0
+
+def find_cover(folder_name):
+    full = os.path.join(AUDIOBOOKS_DIR, folder_name)
+    for name in PREFERRED_COVERS:
+        if os.path.isfile(os.path.join(full, name)):
+            return f"{folder_name}/{name}"
+    try:
+        imgs = sorted(n for n in os.listdir(full) if n.lower().endswith(IMAGE_EXT))
+        if imgs: return f"{folder_name}/{imgs[0]}"
+    except OSError: pass
+    return None
+
+books = []
+for folder_name in sorted(os.listdir(AUDIOBOOKS_DIR)):
+    full = os.path.join(AUDIOBOOKS_DIR, folder_name)
+    if not os.path.isdir(full) or folder_name.startswith("."): continue
+    audio_files = sorted(n for n in os.listdir(full) if n.lower().endswith(AUDIO_EXT))
+    if not audio_files:
+        print(f"  [skip] No audio files in: {folder_name}"); continue
+    print(f"  [book] {folder_name} ({len(audio_files)} track(s))")
+    tracks = []
+    for filename in audio_files:
+        ms = get_duration_ms(os.path.join(full, filename))
+        tracks.append({"file": filename, "durationMs": ms})
+    books.append({"id": slugify(folder_name), "title": folder_name,
+                  "coverUrl": find_cover(folder_name), "tracks": tracks})
+
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(OUT_FILE))
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump({"books": books}, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, OUT_FILE)
+except Exception as e:
+    try: os.unlink(tmp)
+    except OSError: pass
+    print(f"ERROR: {e}"); sys.exit(1)
+
+save_cache(cache)
+print(f"\n✅ Done. Wrote {len(books)} book(s) to {OUT_FILE}")
+PY
+
+sudo chown www-data:www-data "$OUT"
+sudo chmod 664 "$OUT"
+sudo chmod 775 "$DATA_DIR"
+echo "[regen] Done."</code></pre>
         <div class="code-label">terminal</div>
-        <pre><code>chmod +x /srv/audiobook-data/regen_library.sh
-/srv/audiobook-data/regen_library.sh</code></pre>
+        <pre><code>chmod +x /srv/audiobook-api/regen_library.sh
+sudo -u www-data /srv/audiobook-api/regen_library.sh</code></pre>
         <div class="callout warning">
           <p>
-            ⚠ The first run of this script can take a while if you have a large library
-            or books with many short chapter files — it runs <code>ffprobe</code> on every
-            audio file to read its duration. Let it finish before starting the services.
+            ⚠ The first run can take a while for large libraries — it reads
+            every audio file to measure its duration. Subsequent runs are fast
+            because results are cached. Let it finish before starting the services.
           </p>
         </div>
       </div>
@@ -1001,30 +1071,30 @@ sudo /usr/bin/chmod 664 "$OUTPUT"</code></pre>
           while a book upload is still in progress.
         </p>
         <div class="code-label">terminal</div>
-        <pre><code>sudo nano /srv/audiobook-data/audiobook-watch.sh</code></pre>
+        <pre><code>sudo nano /srv/audiobook-api/audiobook-watch.sh</code></pre>
         <p>Paste the following content:</p>
         <div class="code-label">audiobook-watch.sh</div>
         <pre><code>#!/bin/bash
-source /srv/audiobook-data/config.env
+source /srv/audiobook-api/config.env
 
-echo "Watching $BOOKS_DIR for changes..."
+echo "[watch] Watching $AUDIOBOOKS_DIR for changes..."
 
 while true; do
     inotifywait -r -e modify,create,delete,moved_to,moved_from \
-        "$BOOKS_DIR" 2>/dev/null
+        "$AUDIOBOOKS_DIR" 2>/dev/null
 
-    echo "Change detected. Waiting for activity to settle..."
+    echo "[watch] Change detected. Waiting for activity to settle..."
     while inotifywait -r -e modify,create,delete,moved_to,moved_from \
-        -t 25 "$BOOKS_DIR" 2>/dev/null; do
-        echo "Still active, resetting settle timer..."
+        -t 25 "$AUDIOBOOKS_DIR" 2>/dev/null; do
+        echo "[watch] Still active, resetting timer..."
     done
 
-    echo "Activity settled. Regenerating library..."
-    /srv/audiobook-data/regen_library.sh
-    echo "Library regenerated."
+    echo "[watch] Regenerating library..."
+    /srv/audiobook-api/regen_library.sh
+    echo "[watch] Done."
 done</code></pre>
         <div class="code-label">terminal</div>
-        <pre><code>chmod +x /srv/audiobook-data/audiobook-watch.sh</code></pre>
+        <pre><code>chmod +x /srv/audiobook-api/audiobook-watch.sh</code></pre>
         <div class="callout">
           <p>
             💡 The 25-second timer resets every time new activity is detected.
@@ -1046,29 +1116,44 @@ done</code></pre>
         </p>
         <p class="code-label">/etc/systemd/system/audiobook-api.service</p>
         <pre><code>[Unit]
-Description=AudioBook Flask API
+Description=Audiobook API
 After=network.target
 
 [Service]
-EnvironmentFile=/srv/audiobook-data/config.env
-ExecStart=/usr/bin/python3 /srv/audiobook-data/audiobook_api.py
-WorkingDirectory=/srv/audiobook-data
+User=www-data
+Group=www-data
+WorkingDirectory=/srv/audiobook-api
+ExecStart=/srv/audiobook-api/venv/bin/gunicorn \
+  --workers 2 \
+  --bind 127.0.0.1:5000 \
+  --access-logfile - \
+  --error-logfile - \
+  audiobook_api:app
 Restart=always
-User=pi
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target</code></pre>
 
+        <div class="callout">
+          <p>
+            💡 The API runs as <code>www-data</code> so it can write
+            <code>progress.json</code> with the correct ownership. This is why
+            we set up the sudoers rule in step 9.
+          </p>
+        </div>
+
         <p class="code-label">/etc/systemd/system/audiobook-watch.service</p>
         <pre><code>[Unit]
-Description=AudioBook Library Watcher
+Description=Audiobook Library Watcher
 After=network.target
 
 [Service]
-EnvironmentFile=/srv/audiobook-data/config.env
-ExecStart=/bin/bash /srv/audiobook-data/audiobook-watch.sh
+User=www-data
+Group=www-data
+ExecStart=/bin/bash /srv/audiobook-api/audiobook-watch.sh
 Restart=always
-User=pi
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target</code></pre>
@@ -1077,6 +1162,13 @@ WantedBy=multi-user.target</code></pre>
         <pre><code>sudo systemctl daemon-reload
 sudo systemctl enable audiobook-api audiobook-watch
 sudo systemctl start audiobook-api audiobook-watch</code></pre>
+        <div class="callout">
+          <p>
+            💡 Make sure <code>/srv/audiobook-api/audiobook-watch.sh</code> uses
+            the variable <code>AUDIOBOOKS_DIR</code> (from <code>config.env</code>),
+            not <code>BOOKS_DIR</code> — the two config files use different variable names.
+          </p>
+        </div>
 
         <div class="code-label">terminal — verify both services are running</div>
         <pre><code>sudo systemctl status audiobook-api
@@ -1194,14 +1286,4 @@ sudo journalctl -u audiobook-watch -n 30</code></pre>
     in owning their audiobooks, not a platform with pretensions of scaling.
     If you want to share audiobooks with the world, this app is the wrong choice.
     If you want to share them with your family — without asking anyone's permission
-    or jumping through hoops — and if you're not afraid of a bit of technical footwork,
-    then this audiobook player is exactly what you need!
-  </p>
-</section>
-
-<footer>
-  <p>AudioVault · Free &amp; open source · No DRM · No subscriptions</p>
-</footer>
-
-</body>
-</html>
+    or jumping through hoops — and i
