@@ -404,6 +404,7 @@
     <li><a href="#about">About</a></li>
     <li><a href="#local">Local</a></li>
     <li><a href="#server">Server</a></li>
+    <li><a href="#updating">Updating</a></li>
     <li><a href="#philosophy">Philosophy</a></li>
   </ul>
 </nav>
@@ -1210,6 +1211,114 @@ sudo journalctl -u audiobook-watch -n 30</code></pre>
           </p>
         </div>
       </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ── UPDATING ── -->
+<section id="updating">
+  <p class="section-label">Keeping up to date</p>
+  <h2>Updating your<br />server scripts</h2>
+  <p>
+    The Android app updates automatically through the Play Store.
+    The server scripts on your Raspberry Pi do <strong>not</strong> update automatically —
+    you need to copy the new versions manually when a new release adds server-side changes.
+  </p>
+
+  <div class="callout">
+    <p>
+      💡 Not every app update requires a server script update.
+      Release notes on the Play Store will say if a server update is needed.
+    </p>
+  </div>
+
+  <div class="steps">
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h3>Download the latest scripts</h3>
+        <p>
+          Connect to your Pi via SSH, then download the updated scripts directly:
+        </p>
+        <div class="code-label">terminal</div>
+        <pre><code>curl -s https://raw.githubusercontent.com/dejnastosic986/audiobook-player/main/regen_library.sh \
+  -o /tmp/regen_library.sh</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <h3>Review the changes (optional but recommended)</h3>
+        <p>
+          Before replacing your existing script, you can compare the two versions:
+        </p>
+        <div class="code-label">terminal</div>
+        <pre><code>diff /srv/audiobook-api/regen_library.sh /tmp/regen_library.sh</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <h3>Replace and run</h3>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo cp /tmp/regen_library.sh /srv/audiobook-api/regen_library.sh
+sudo chmod +x /srv/audiobook-api/regen_library.sh
+sudo -u www-data /srv/audiobook-api/regen_library.sh</code></pre>
+        <p>
+          The last command regenerates <code>library.json</code> with any new data
+          the updated script provides — for example, chapter metadata added in v1.5.
+        </p>
+        <div class="callout warning">
+          <p>
+            ⚠ The first run after a script update may take longer than usual
+            if new data needs to be read from every file (e.g. chapter metadata).
+            Let it finish before restarting the services.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <h3>Restart the watch service</h3>
+        <p>
+          The watcher service runs the scanner automatically on file changes.
+          Restart it to pick up any changes to the scanner script:
+        </p>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo systemctl restart audiobook-watch</code></pre>
+        <p>Verify it is running:</p>
+        <pre><code>sudo systemctl status audiobook-watch</code></pre>
+      </div>
+    </div>
+
+  </div>
+
+  <h3 style="margin-top: 2rem;">What changed in each version</h3>
+  <div style="margin-top: 1rem;">
+
+    <div style="
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+    ">
+      <p style="margin:0 0 0.5rem 0;">
+        <span style="font-family: 'DM Mono', monospace; font-size: 0.8rem; color: var(--accent);">v1.5</span>
+        <strong style="margin-left: 0.75rem; color: var(--text);">Chapter support</strong>
+      </p>
+      <p style="margin:0; font-size: 0.9rem;">
+        <code>regen_library.sh</code> now reads chapter markers from m4b and mp3 files
+        using <code>ffprobe</code> and includes them in <code>library.json</code>.
+        Without this update, the chapter navigation UI in the app will not appear
+        for server-mode users.
+      </p>
     </div>
 
   </div>
