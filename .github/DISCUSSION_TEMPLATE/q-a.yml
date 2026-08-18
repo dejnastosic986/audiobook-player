@@ -1,0 +1,45 @@
+title: "[Q&A]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Filling in what you can below (especially the exact error text) usually
+        gets you a faster answer than "it doesn't work" — and helps the next
+        person who searches for the same problem.
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: How did you set up / manage your server?
+      options:
+        - Install.sh (terminal)
+        - AudioVault Manager (desktop app)
+        - Both / switched between them
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to do, and what's happening instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: error-output
+    attributes:
+      label: Exact error / output (if any)
+      description: Paste the exact text if you have it — screenshots work too, but text is searchable.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: Server OS
+      placeholder: e.g. Raspberry Pi OS Bookworm, Ubuntu 22.04
+    validations:
+      required: false
