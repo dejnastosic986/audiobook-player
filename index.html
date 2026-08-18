@@ -652,8 +652,17 @@ nano install.sh</code></pre>
       <div class="step-body">
         <h3>Install required packages</h3>
         <div class="code-label">terminal</div>
-        <pre><code>sudo apt install -y nginx python3 python3-pip ffmpeg inotify-tools
-pip3 install flask --break-system-packages</code></pre>
+        <pre><code>sudo apt install -y nginx python3 python3-pip python3-venv ffmpeg inotify-tools</code></pre>
+        <p>
+          The API runs inside its own virtual environment at
+          <code>/srv/audiobook-api/venv</code> so its packages never conflict
+          with the system's Python:
+        </p>
+        <div class="code-label">terminal</div>
+        <pre><code>sudo mkdir -p /srv/audiobook-api
+sudo chown -R $USER:$USER /srv/audiobook-api
+python3 -m venv /srv/audiobook-api/venv
+/srv/audiobook-api/venv/bin/pip install --quiet flask gunicorn python-dotenv</code></pre>
       </div>
     </div>
 
@@ -732,22 +741,22 @@ sudo nano /etc/fstab</code></pre>
           <strong>Enter</strong> to confirm the filename,
           and <strong>Ctrl+X</strong> to exit.
         </p>
-        <p>Create <code>/srv/audiobook-data/config.env</code>:</p>
+        <p>Create <code>/srv/audiobook-api/config.env</code> (the API, scanner and
+        watcher all read their books path from this one file):</p>
         <div class="code-label">terminal</div>
-        <pre><code>sudo nano /srv/audiobook-data/config.env</code></pre>
+        <pre><code>sudo nano /srv/audiobook-api/config.env</code></pre>
         <p>Paste the following content:</p>
-        <div class="code-label">/srv/audiobook-data/config.env</div>
+        <div class="code-label">/srv/audiobook-api/config.env</div>
         <pre><code># Path to the folder containing your audiobook subfolders.
 # Change this if your drive is mounted elsewhere or your folder has a different name.
-BOOKS_DIR=/mnt/audiodrive/audiobooks
-
-# Path where library.json and progress data will be stored.
-# This stays on the SD card — only the books live on the external drive.
-DATA_DIR=/srv/audiobook-data</code></pre>
-        <p>Save and exit nano (Ctrl+O → Enter → Ctrl+X), then create the directories:</p>
+AUDIOBOOKS_DIR=/mnt/audiodrive/audiobooks</code></pre>
+        <p>Save and exit nano (Ctrl+O → Enter → Ctrl+X), then create the data directory
+        (this is where <code>library.json</code> and <code>progress.json</code> are
+        generated — it's a fixed path used directly by the scripts, not read from
+        <code>config.env</code>):</p>
         <div class="code-label">terminal</div>
         <pre><code>sudo mkdir -p /srv/audiobook-data
-sudo chown -R $USER:$USER /srv/audiobook-data
+sudo chown -R www-data:www-data /srv/audiobook-data
 mkdir -p /mnt/audiodrive/audiobooks</code></pre>
         <div class="callout">
           <p>
@@ -787,39 +796,115 @@ mkdir -p /mnt/audiodrive/audiobooks</code></pre>
         <h3>Create the Flask API</h3>
         <p>First, install the required Python packages:</p>
         <div class="code-label">terminal</div>
-        <pre><code>pip3 install flask python-dotenv --break-system-packages</code></pre>
-        <p>Then create the file:</p>
+        <p>
+          The venv from step 3 already has Flask installed. Create the API file:
+        </p>
         <div class="code-label">terminal</div>
-        <pre><code>sudo nano /srv/audiobook-data/audiobook_api.py</code></pre>
+        <pre><code>sudo nano /srv/audiobook-api/audiobook_api.py</code></pre>
         <p>Paste the following content:</p>
         <div class="code-label">audiobook_api.py</div>
         <pre><code>from flask import Flask, jsonify, request
-import json, os
-from dotenv import load_dotenv
-
-load_dotenv("/srv/audiobook-data/config.env")
-DATA_DIR = os.getenv("DATA_DIR", "/srv/audiobook-data")
+import json, os, time
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 app = Flask(__name__)
 
-@app.route("/api/progress/&lt;profile&gt;/&lt;book_id&gt;", methods=["GET"])
-def get_progress(profile, book_id):
-    path = f"{DATA_DIR}/progress/{profile}/{book_id}.json"
-    if os.path.exists(path):
-        return jsonify(json.load(open(path)))
-    return jsonify({"trackIndex": 0, "positionMs": 0, "updatedAt": 0})
+DATA_DIR      = Path("/srv/audiobook-data")
+PROGRESS_FILE = DATA_DIR / "progress.json"
 
-@app.route("/api/progress/&lt;profile&gt;/&lt;book_id&gt;", methods=["POST"])
-def post_progress(profile, book_id):
-    data = request.get_json()
-    folder = f"{DATA_DIR}/progress/{profile}"
-    os.makedirs(folder, exist_ok=True)
-    with open(f"{folder}/{book_id}.json", "w") as f:
-        json.dump(data, f)
+
+def atomic_write_json(path: Path, data: dict):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = NamedTemporaryFile("w", delete=False, dir=str(path.parent), encoding="utf-8")
+    try:
+        json.dump(data, tmp, ensure_ascii=False, indent=2)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        tmp.close()
+        os.replace(tmp.name, str(path))
+        os.chmod(str(path), 0o664)
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+
+
+def load_json(path: Path, default: dict):
+    try:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return default
+
+
+@app.route("/api/progress", methods=["GET"])
+def get_progress():
+    profile = (request.args.get("profile") or "").strip()
+    book_id = (request.args.get("bookId") or "").strip()
+    root = load_json(PROGRESS_FILE, {"profiles": {}})
+    item = root.get("profiles", {}).get(profile, {}).get(book_id)
+    return jsonify(item or {})
+
+
+@app.route("/api/progress", methods=["POST"])
+def save_progress():
+    data      = request.get_json(force=True, silent=True) or {}
+    profile   = (data.get("profile") or "").strip()
+    book_id   = (data.get("bookId") or "").strip()
+    track_idx = data.get("trackIndex")
+    pos_ms    = data.get("positionMs")
+
+    if not profile or not book_id:
+        return jsonify({"ok": False, "error": "Missing profile or bookId"}), 400
+
+    root = load_json(PROGRESS_FILE, {"profiles": {}})
+    root.setdefault("profiles", {}).setdefault(profile, {})[book_id] = {
+        "trackIndex": track_idx,
+        "positionMs": pos_ms,
+        "updatedAt":  int(time.time())
+    }
+    atomic_write_json(PROGRESS_FILE, root)
     return jsonify({"ok": True})
 
+
+@app.route("/api/profile-rename", methods=["POST"])
+def rename_profile():
+    data        = request.get_json(force=True, silent=True) or {}
+    old_profile = (data.get("oldProfile") or "").strip()
+    new_profile = (data.get("newProfile") or "").strip()
+
+    if not old_profile or not new_profile:
+        return jsonify({"ok": False, "error": "Missing profile names"}), 400
+    if old_profile == new_profile:
+        return jsonify({"ok": True})
+
+    root = load_json(PROGRESS_FILE, {"profiles": {}})
+    old_data = root["profiles"].get(old_profile, {})
+    root["profiles"].setdefault(new_profile, {})
+    for book_id, entry in old_data.items():
+        existing = root["profiles"][new_profile].get(book_id)
+        if not existing or existing.get("updatedAt", 0) < entry.get("updatedAt", 0):
+            root["profiles"][new_profile][book_id] = entry
+    root["profiles"].pop(old_profile, None)
+    atomic_write_json(PROGRESS_FILE, root)
+    return jsonify({"ok": True})
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)</code></pre>
+    app.run(host="127.0.0.1", port=5000)</code></pre>
+        <div class="callout">
+          <p>
+            💡 Progress for every profile and book lives in one file,
+            <code>/srv/audiobook-data/progress.json</code>, written atomically
+            (write to a temp file, then rename) so a crash or power loss mid-write
+            can't corrupt it. The API only listens on <code>127.0.0.1</code> — it's
+            never exposed directly, only reachable through nginx's <code>/api/</code>
+            proxy from step 8.
+          </p>
+        </div>
       </div>
     </div>
 
@@ -887,7 +972,10 @@ sudo nginx -t && sudo systemctl reload nginx</code></pre>
 www-data ALL=(root) NOPASSWD: /usr/bin/chown -R www-data:www-data /mnt/audiodrive/audiobooks
 www-data ALL=(root) NOPASSWD: /usr/bin/chmod 644 /srv/audiobook-data/library.json
 www-data ALL=(root) NOPASSWD: /usr/bin/chmod 664 /srv/audiobook-data/library.json
-www-data ALL=(root) NOPASSWD: /usr/bin/chmod -R 755 /mnt/audiodrive/audiobooks</code></pre>
+www-data ALL=(root) NOPASSWD: /usr/bin/chmod -R 755 /mnt/audiodrive/audiobooks
+www-data ALL=(root) NOPASSWD: /usr/bin/chown www-data:www-data /srv/audiobook-data/duration_cache.json
+www-data ALL=(root) NOPASSWD: /usr/bin/chmod 664 /srv/audiobook-data/duration_cache.json
+www-data ALL=(root) NOPASSWD: /usr/bin/chmod 775 /srv/audiobook-data</code></pre>
         <p>Verify the syntax before saving:</p>
         <div class="code-label">terminal</div>
         <pre><code>sudo visudo -c -f /etc/sudoers.d/www-data-chown</code></pre>
@@ -929,12 +1017,14 @@ www-data ALL=(root) NOPASSWD: /usr/bin/chmod -R 755 /mnt/audiodrive/audiobooks</
         <p>Paste the following content:</p>
         <div class="code-label">regen_library.sh</div>
         <pre><code>#!/usr/bin/env bash
+# regen_library.sh
+
 set -euo pipefail
 
 CONFIG_FILE="/srv/audiobook-api/config.env"
-[ -f "$CONFIG_FILE" ] || { echo "ERROR: config.env not found"; exit 1; }
+[[ -f "$CONFIG_FILE" ]] || { echo "ERROR: config.env not found"; exit 1; }
 source "$CONFIG_FILE"
-[ -n "${AUDIOBOOKS_DIR:-}" ] || { echo "ERROR: AUDIOBOOKS_DIR not set"; exit 1; }
+[[ -n "${AUDIOBOOKS_DIR:-}" ]] || { echo "ERROR: AUDIOBOOKS_DIR not set"; exit 1; }
 
 DATA_DIR="/srv/audiobook-data"
 OUT="$DATA_DIR/library.json"
@@ -942,8 +1032,10 @@ mkdir -p "$DATA_DIR"
 umask 0002
 
 echo "[regen] Scanning: $AUDIOBOOKS_DIR"
+echo "[regen] Output:   $OUT"
 
 AUDIOBOOKS_DIR="$AUDIOBOOKS_DIR" OUT_FILE="$OUT" python3 - &lt;&lt;'PY'
+
 import os, sys, json, subprocess, tempfile, shutil
 
 AUDIOBOOKS_DIR = os.environ["AUDIOBOOKS_DIR"]
@@ -953,7 +1045,11 @@ IMAGE_EXT      = (".jpg", ".jpeg", ".png")
 PREFERRED_COVERS = ("cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.png")
 
 if not shutil.which("ffprobe"):
-    print("ERROR: ffprobe not found. Install with: sudo apt install ffmpeg")
+    print("ERROR: ffprobe not found. Install: sudo apt install ffmpeg")
+    sys.exit(1)
+
+if not os.path.isdir(AUDIOBOOKS_DIR):
+    print(f"ERROR: Directory not found: {AUDIOBOOKS_DIR}")
     sys.exit(1)
 
 CACHE_FILE = os.path.join(os.path.dirname(OUT_FILE), "duration_cache.json")
@@ -968,6 +1064,7 @@ def save_cache(cache):
         fd, tmp = tempfile.mkstemp(dir=os.path.dirname(CACHE_FILE))
         with os.fdopen(fd, "w", encoding="utf-8") as f: json.dump(cache, f)
         os.replace(tmp, CACHE_FILE)
+        os.chmod(CACHE_FILE, 0o664)
     except Exception as e: print(f"[warn] Could not save cache: {e}")
 
 cache = load_cache()
@@ -1003,6 +1100,81 @@ def get_duration_ms(path):
         return ms
     except Exception: return 0
 
+def get_chapters(path):
+    """
+    Reads chapter markers from an audio file using ffprobe.
+    Works for m4b/m4a (iTunes chapters) and mp3 (ID3 CHAP frames).
+    Returns a list of {"title", "startMs", "endMs"} dicts, or [] if none found.
+    """
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "quiet",
+             "-print_format", "json",
+             "-show_chapters", path],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+        data = json.loads(r.stdout or "{}")
+        raw_chapters = data.get("chapters", [])
+        if len(raw_chapters) &lt;= 1:
+            return []
+        chapters = []
+        for i, ch in enumerate(raw_chapters):
+            title = ch.get("tags", {}).get("title", f"Chapter {i + 1}")
+            start_ms = int(float(ch.get("start_time", 0)) * 1000)
+            end_ms   = int(float(ch.get("end_time",   0)) * 1000)
+            chapters.append({"title": title, "startMs": start_ms, "endMs": end_ms})
+        return chapters
+    except Exception as e:
+        print(f"    [warn] Could not read chapters from {os.path.basename(path)}: {e}")
+        return []
+
+def extract_embedded_cover(audio_path, folder_name):
+    """
+    Attempts to extract embedded artwork from audio file using ffmpeg.
+    Works for m4b (iTunes cover art) and mp3 (ID3 APIC frame).
+    Saves as cover.jpg in book folder with correct owner/permissions.
+    Returns relative path on success, None if no artwork or cover already exists.
+    """
+    # Check all possible cover files -- if any exists, skip
+    full_folder = os.path.join(AUDIOBOOKS_DIR, folder_name)
+    for name in PREFERRED_COVERS:
+        if os.path.isfile(os.path.join(full_folder, name)):
+            return None
+    existing_imgs = [n for n in os.listdir(full_folder) if n.lower().endswith(IMAGE_EXT)]
+    if existing_imgs:
+        return None
+
+    ext = os.path.splitext(audio_path)[1].lower()
+    if ext not in (".m4b", ".m4a", ".mp3"):
+        return None
+
+    cover_path = os.path.join(AUDIOBOOKS_DIR, folder_name, "cover.jpg")
+
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-v", "quiet", "-i", audio_path,
+             "-an",            # bez audio streama
+             "-vcodec", "copy", # kopiraj video stream (cover art)
+             "-y",             # overwrite ako postoji
+             cover_path],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=30
+        )
+        if r.returncode == 0 and os.path.isfile(cover_path) and os.path.getsize(cover_path) &gt; 0:
+            # Set correct permissions -- www-data must read, upload user must write
+            os.chmod(cover_path, 0o664)
+            print(f"    [cover] Extracted embedded artwork")
+            return f"{folder_name}/cover.jpg"
+        else:
+            # Cleanup ako je ffmpeg napravio prazan fajl
+            try:
+                if os.path.isfile(cover_path) and os.path.getsize(cover_path) == 0:
+                    os.unlink(cover_path)
+            except OSError: pass
+            return None
+    except Exception as e:
+        print(f"    [warn] Could not extract cover from {os.path.basename(audio_path)}: {e}")
+        return None
+
 def find_cover(folder_name):
     full = os.path.join(AUDIOBOOKS_DIR, folder_name)
     for name in PREFERRED_COVERS:
@@ -1014,37 +1186,139 @@ def find_cover(folder_name):
     except OSError: pass
     return None
 
-books = []
-for folder_name in sorted(os.listdir(AUDIOBOOKS_DIR)):
+def list_audio_files(folder_name):
     full = os.path.join(AUDIOBOOKS_DIR, folder_name)
-    if not os.path.isdir(full) or folder_name.startswith("."): continue
-    audio_files = sorted(n for n in os.listdir(full) if n.lower().endswith(AUDIO_EXT))
+    try:
+        return sorted(n for n in os.listdir(full) if n.lower().endswith(AUDIO_EXT))
+    except OSError: return []
+
+books = []
+skipped_zero = []
+warned_partial = []
+missing_covers = []  # Books without cover that have a single audio file -- candidates for extraction
+
+# -- PASS 1: duration, chapters, existing covers --
+for folder_name in sorted(os.listdir(AUDIOBOOKS_DIR)):
+    full_folder = os.path.join(AUDIOBOOKS_DIR, folder_name)
+    if not os.path.isdir(full_folder) or folder_name.startswith("."): continue
+
+    audio_files = list_audio_files(folder_name)
     if not audio_files:
         print(f"  [skip] No audio files in: {folder_name}"); continue
+
     print(f"  [book] {folder_name} ({len(audio_files)} track(s))")
+
     tracks = []
+    zero_tracks = []
+
     for filename in audio_files:
-        ms = get_duration_ms(os.path.join(full, filename))
+        full_file = os.path.join(full_folder, filename)
+        ms = get_duration_ms(full_file)
+        if ms == 0:
+            zero_tracks.append(filename)
+            print(f"    [warn] Duration 0ms: {filename}")
+        else:
+            print(f"    [ok]   {filename} ({ms // 1000}s)")
         tracks.append({"file": filename, "durationMs": ms})
-    books.append({"id": slugify(folder_name), "title": folder_name,
-                  "coverUrl": find_cover(folder_name), "tracks": tracks})
 
-fd, tmp = tempfile.mkstemp(dir=os.path.dirname(OUT_FILE))
-try:
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump({"books": books}, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, OUT_FILE)
-except Exception as e:
-    try: os.unlink(tmp)
-    except OSError: pass
-    print(f"ERROR: {e}"); sys.exit(1)
+    if zero_tracks:
+        if len(zero_tracks) == len(audio_files): skipped_zero.append(folder_name)
+        else: warned_partial.append(folder_name)
 
+    # Chapters for single-file books
+    chapters = []
+    if len(audio_files) == 1:
+        full_file = os.path.join(full_folder, audio_files[0])
+        chapters = get_chapters(full_file)
+        if chapters:
+            print(f"    [chapters] Found {len(chapters)} chapters")
+
+    # Cover -- only check if already exists, do NOT attempt extraction yet
+    cover_rel = find_cover(folder_name)
+
+    book = {
+        "id":       slugify(folder_name),
+        "title":    folder_name,
+        "coverUrl": cover_rel,
+        "tracks":   tracks,
+    }
+    if chapters:
+        book["chapters"] = chapters
+
+    books.append(book)
+
+    # Track candidates for cover extraction -- single file books without a cover
+    if cover_rel is None and len(audio_files) == 1:
+        missing_covers.append((folder_name, audio_files[0]))
+
+# -- Atomic write library.json -- Pass 1 result --
+def write_library(books):
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(OUT_FILE))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"books": books}, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, OUT_FILE)
+        os.chmod(OUT_FILE, 0o664)
+    except Exception as e:
+        try: os.unlink(tmp)
+        except OSError: pass
+        raise e
+
+write_library(books)
 save_cache(cache)
-print(f"\n✅ Done. Wrote {len(books)} book(s) to {OUT_FILE}")
+print("")
+print("[regen] Pass 1 done. Written " + str(len(books)) + " book(s) to " + OUT_FILE)
+
+# -- PASS 2: cover extraction for books without a cover --
+# Each successful extraction immediately patches library.json
+if missing_covers:
+    print("")
+    print("[cover] Attempting cover extraction for " + str(len(missing_covers)) + " books...")
+    extracted_covers = []
+
+    for folder_name, audio_filename in missing_covers:
+        full_file = os.path.join(AUDIOBOOKS_DIR, folder_name, audio_filename)
+        cover_rel = extract_embedded_cover(full_file, folder_name)
+
+        if cover_rel:
+            extracted_covers.append(folder_name)
+            # Patch only this entry in library.json
+            try:
+                data = json.loads(open(OUT_FILE, encoding="utf-8").read())
+                book_id = slugify(folder_name)
+                for b in data["books"]:
+                    if b["id"] == book_id:
+                        b["coverUrl"] = cover_rel
+                        break
+                write_library(data["books"])
+                print(f"    [ok] Cover added to library.json for: {folder_name}")
+            except Exception as e:
+                print(f"    [warn] Could not patch library.json: {e}")
+
+    if extracted_covers:
+        print("")
+        print("[cover] Extracted embedded cover art for " + str(len(extracted_covers)) + " book(s):")
+        for b in extracted_covers: print("   - " + b)
+    else:
+        print("   No embedded artwork found in remaining books.")
+
+if skipped_zero:
+    print()
+    print("WARNING: ALL tracks 0ms duration:")
+    for b in skipped_zero: print(f"   - {b}")
+
+if warned_partial:
+    print()
+    print("WARNING: SOME tracks 0ms duration:")
+    for b in warned_partial: print(f"   - {b}")
+
 PY
 
+# Postavi ispravne permisije na sve output fajlove
 sudo chown www-data:www-data "$OUT"
 sudo chmod 664 "$OUT"
+sudo chown www-data:www-data "$DATA_DIR/duration_cache.json" 2&gt;/dev/null || true
+sudo chmod 664 "$DATA_DIR/duration_cache.json" 2&gt;/dev/null || true
 sudo chmod 775 "$DATA_DIR"
 echo "[regen] Done."</code></pre>
         <div class="code-label">terminal</div>
@@ -1318,6 +1592,32 @@ sudo -u www-data /srv/audiobook-api/regen_library.sh</code></pre>
         using <code>ffprobe</code> and includes them in <code>library.json</code>.
         Without this update, the chapter navigation UI in the app will not appear
         for server-mode users.
+      </p>
+    </div>
+
+    <div style="
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+    ">
+      <p style="margin:0 0 0.5rem 0;">
+        <span style="font-family: 'DM Mono', monospace; font-size: 0.8rem; color: var(--accent);">v1.6</span>
+        <strong style="margin-left: 0.75rem; color: var(--text);">Automatic cover extraction</strong>
+      </p>
+      <p style="margin:0; font-size: 0.9rem;">
+        For single-file books with no cover image, <code>regen_library.sh</code> now
+        pulls the embedded artwork out of the m4b/m4a/mp3 file itself using
+        <code>ffmpeg</code> and saves it as <code>cover.jpg</code> — no need to find
+        and upload cover art by hand for most books.
+      </p>
+      <p style="margin:0.5rem 0 0 0; font-size: 0.9rem;">
+        ⚠ This version also needs 3 extra lines in
+        <code>/etc/sudoers.d/www-data-chown</code> (for <code>duration_cache.json</code>
+        and the data folder's permissions) — see step 9. Without them, a manual regen
+        run will report a failure at the very end even though the library itself was
+        written correctly.
       </p>
     </div>
 
