@@ -1,0 +1,81 @@
+name: Bug report
+description: Something in Install.sh, the server scripts, or the setup guide isn't working as documented.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The more of the fields below
+        you can fill in, the faster this can get diagnosed — especially the
+        exact error text and Diagnostics output.
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: How did you set up / manage your server?
+      options:
+        - Install.sh (terminal)
+        - AudioVault Manager (desktop app)
+        - Both / switched between them
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: install-version
+    attributes:
+      label: When did you last run Install.sh (or update the server)?
+      description: Roughly is fine — e.g. "today", "a few weeks ago", "haven't updated since first install"
+      placeholder: e.g. today, fresh install
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what actually happened instead?
+      placeholder: Tell us what you see
+    validations:
+      required: true
+
+  - type: textarea
+    id: error-output
+    attributes:
+      label: Exact error / terminal output
+      description: >
+        Paste the exact text — a screenshot works too, but text can be searched
+        by the next person with the same problem. If it's from AudioVault
+        Manager, this is the popup text or the Setup tab's terminal output.
+        If it's from Install.sh directly, paste what printed right before it stopped.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics tab output (if using AudioVault Manager)
+      description: >
+        Open the Diagnostics tab, click "Run checks", and paste what shows up —
+        especially anything marked OUTDATED or MISSING.
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: Server OS
+      placeholder: e.g. Raspberry Pi OS Bookworm, Ubuntu 22.04
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checked-discussions
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched Discussions/Issues and didn't find this already reported
+          required: true
