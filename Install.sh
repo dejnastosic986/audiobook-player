@@ -582,12 +582,12 @@ echo -e "${BOLD}── Configuring permissions ───────────
 echo ""
 
 cat > /etc/sudoers.d/www-data-chown << SUDOEOF
-www-data ALL=(root) NOPASSWD: /usr/bin/chown www-data:www-data /srv/audiobook-data/library.json
-www-data ALL=(root) NOPASSWD: /usr/bin/chown -R www-data:www-data $AUDIOBOOKS_DIR
+www-data ALL=(root) NOPASSWD: /usr/bin/chown www-data\:www-data /srv/audiobook-data/library.json
+www-data ALL=(root) NOPASSWD: /usr/bin/chown -R www-data\:www-data $AUDIOBOOKS_DIR
 www-data ALL=(root) NOPASSWD: /usr/bin/chmod 644 /srv/audiobook-data/library.json
 www-data ALL=(root) NOPASSWD: /usr/bin/chmod 664 /srv/audiobook-data/library.json
 www-data ALL=(root) NOPASSWD: /usr/bin/chmod -R 755 $AUDIOBOOKS_DIR
-www-data ALL=(root) NOPASSWD: /usr/bin/chown www-data:www-data /srv/audiobook-data/duration_cache.json
+www-data ALL=(root) NOPASSWD: /usr/bin/chown www-data\:www-data /srv/audiobook-data/duration_cache.json
 www-data ALL=(root) NOPASSWD: /usr/bin/chmod 664 /srv/audiobook-data/duration_cache.json
 www-data ALL=(root) NOPASSWD: /usr/bin/chmod 775 /srv/audiobook-data
 SUDOEOF
