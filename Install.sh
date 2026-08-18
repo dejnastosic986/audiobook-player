@@ -16,6 +16,10 @@
 #   7. Creates and enables systemd services
 #   8. Runs the first library scan
 #
+# The library scanner (regen_library.sh) also reads chapter markers
+# (m4b/mp3 via ffprobe) and extracts embedded cover art for single-file
+# books that don't already have a cover image (via ffmpeg).
+#
 # You are encouraged to read through this script before running it.
 # Every section is commented. Nothing is hidden.
 # =============================================================================
@@ -233,12 +237,14 @@ echo -e "${BOLD}── Creating library scanner ──────────�
 echo ""
 cat > "$API_DIR/regen_library.sh" << 'REGENEOF'
 #!/usr/bin/env bash
+# regen_library.sh
+
 set -euo pipefail
 
 CONFIG_FILE="/srv/audiobook-api/config.env"
-[ -f "$CONFIG_FILE" ] || { echo "ERROR: config.env not found at $CONFIG_FILE"; exit 1; }
+[[ -f "$CONFIG_FILE" ]] || { echo "ERROR: config.env not found"; exit 1; }
 source "$CONFIG_FILE"
-[ -n "${AUDIOBOOKS_DIR:-}" ] || { echo "ERROR: AUDIOBOOKS_DIR not set in $CONFIG_FILE"; exit 1; }
+[[ -n "${AUDIOBOOKS_DIR:-}" ]] || { echo "ERROR: AUDIOBOOKS_DIR not set"; exit 1; }
 
 DATA_DIR="/srv/audiobook-data"
 OUT="$DATA_DIR/library.json"
@@ -249,6 +255,7 @@ echo "[regen] Scanning: $AUDIOBOOKS_DIR"
 echo "[regen] Output:   $OUT"
 
 AUDIOBOOKS_DIR="$AUDIOBOOKS_DIR" OUT_FILE="$OUT" python3 - <<'PY'
+
 import os, sys, json, subprocess, tempfile, shutil
 
 AUDIOBOOKS_DIR = os.environ["AUDIOBOOKS_DIR"]
@@ -258,26 +265,27 @@ IMAGE_EXT      = (".jpg", ".jpeg", ".png")
 PREFERRED_COVERS = ("cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.png")
 
 if not shutil.which("ffprobe"):
-    print("ERROR: ffprobe not found. Install with: sudo apt install ffmpeg")
+    print("ERROR: ffprobe not found. Install: sudo apt install ffmpeg")
+    sys.exit(1)
+
+if not os.path.isdir(AUDIOBOOKS_DIR):
+    print(f"ERROR: Directory not found: {AUDIOBOOKS_DIR}")
     sys.exit(1)
 
 CACHE_FILE = os.path.join(os.path.dirname(OUT_FILE), "duration_cache.json")
 
 def load_cache():
     try:
-        with open(CACHE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+        with open(CACHE_FILE, "r", encoding="utf-8") as f: return json.load(f)
+    except Exception: return {}
 
 def save_cache(cache):
     try:
         fd, tmp = tempfile.mkstemp(dir=os.path.dirname(CACHE_FILE))
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(cache, f)
+        with os.fdopen(fd, "w", encoding="utf-8") as f: json.dump(cache, f)
         os.replace(tmp, CACHE_FILE)
-    except Exception as e:
-        print(f"[warn] Could not save cache: {e}")
+        os.chmod(CACHE_FILE, 0o664)
+    except Exception as e: print(f"[warn] Could not save cache: {e}")
 
 cache = load_cache()
 
@@ -285,41 +293,107 @@ def slugify(s):
     s = s.lower().strip()
     out = []
     for ch in s:
-        if ch.isalnum():
-            out.append(ch)
-        elif ch in (" ", "-", "_"):
-            out.append("-")
+        if ch.isalnum(): out.append(ch)
+        elif ch in (" ", "-", "_"): out.append("-")
     slug = "".join(out)
-    while "--" in slug:
-        slug = slug.replace("--", "-")
+    while "--" in slug: slug = slug.replace("--", "-")
     return slug.strip("-")
 
 def get_duration_ms(path):
     try:
         mtime = str(os.path.getmtime(path))
         key = f"{path}:{mtime}"
-        if key in cache:
-            return cache[key]
-    except OSError:
-        pass
+        if key in cache: return cache[key]
+    except OSError: pass
     try:
         r = subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=duration",
              "-of", "default=noprint_wrappers=1:nokey=1", path],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, timeout=15)
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
         txt = (r.stdout or "").strip()
-        if not txt or txt.lower() == "n/a":
-            return 0
+        if not txt or txt.lower() == "n/a": return 0
         ms = int(float(txt) * 1000)
         try:
             mtime = str(os.path.getmtime(path))
             cache[f"{path}:{mtime}"] = ms
-        except OSError:
-            pass
+        except OSError: pass
         return ms
-    except Exception:
-        return 0
+    except Exception: return 0
+
+def get_chapters(path):
+    """
+    Reads chapter markers from an audio file using ffprobe.
+    Works for m4b/m4a (iTunes chapters) and mp3 (ID3 CHAP frames).
+    Returns a list of {"title", "startMs", "endMs"} dicts, or [] if none found.
+    """
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "quiet",
+             "-print_format", "json",
+             "-show_chapters", path],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+        data = json.loads(r.stdout or "{}")
+        raw_chapters = data.get("chapters", [])
+        if len(raw_chapters) <= 1:
+            return []
+        chapters = []
+        for i, ch in enumerate(raw_chapters):
+            title = ch.get("tags", {}).get("title", f"Chapter {i + 1}")
+            start_ms = int(float(ch.get("start_time", 0)) * 1000)
+            end_ms   = int(float(ch.get("end_time",   0)) * 1000)
+            chapters.append({"title": title, "startMs": start_ms, "endMs": end_ms})
+        return chapters
+    except Exception as e:
+        print(f"    [warn] Could not read chapters from {os.path.basename(path)}: {e}")
+        return []
+
+def extract_embedded_cover(audio_path, folder_name):
+    """
+    Attempts to extract embedded artwork from audio file using ffmpeg.
+    Works for m4b (iTunes cover art) and mp3 (ID3 APIC frame).
+    Saves as cover.jpg in book folder with correct owner/permissions.
+    Returns relative path on success, None if no artwork or cover already exists.
+    """
+    # Check all possible cover files -- if any exists, skip
+    full_folder = os.path.join(AUDIOBOOKS_DIR, folder_name)
+    for name in PREFERRED_COVERS:
+        if os.path.isfile(os.path.join(full_folder, name)):
+            return None
+    existing_imgs = [n for n in os.listdir(full_folder) if n.lower().endswith(IMAGE_EXT)]
+    if existing_imgs:
+        return None
+
+    ext = os.path.splitext(audio_path)[1].lower()
+    if ext not in (".m4b", ".m4a", ".mp3"):
+        return None
+
+    cover_path = os.path.join(AUDIOBOOKS_DIR, folder_name, "cover.jpg")
+
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-v", "quiet", "-i", audio_path,
+             "-an",            # bez audio streama
+             "-vcodec", "copy", # kopiraj video stream (cover art)
+             "-y",             # overwrite ako postoji
+             cover_path],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=30
+        )
+        if r.returncode == 0 and os.path.isfile(cover_path) and os.path.getsize(cover_path) > 0:
+            # Set correct permissions -- www-data must read, upload user must write
+            os.chmod(cover_path, 0o664)
+            print(f"    [cover] Extracted embedded artwork")
+            return f"{folder_name}/cover.jpg"
+        else:
+            # Cleanup ako je ffmpeg napravio prazan fajl
+            try:
+                if os.path.isfile(cover_path) and os.path.getsize(cover_path) == 0:
+                    os.unlink(cover_path)
+            except OSError: pass
+            return None
+    except Exception as e:
+        print(f"    [warn] Could not extract cover from {os.path.basename(audio_path)}: {e}")
+        return None
 
 def find_cover(folder_name):
     full = os.path.join(AUDIOBOOKS_DIR, folder_name)
@@ -328,54 +402,145 @@ def find_cover(folder_name):
             return f"{folder_name}/{name}"
     try:
         imgs = sorted(n for n in os.listdir(full) if n.lower().endswith(IMAGE_EXT))
-        if imgs:
-            return f"{folder_name}/{imgs[0]}"
-    except OSError:
-        pass
+        if imgs: return f"{folder_name}/{imgs[0]}"
+    except OSError: pass
     return None
 
-books = []
-for folder_name in sorted(os.listdir(AUDIOBOOKS_DIR)):
+def list_audio_files(folder_name):
     full = os.path.join(AUDIOBOOKS_DIR, folder_name)
-    if not os.path.isdir(full) or folder_name.startswith("."):
-        continue
-    audio_files = sorted(n for n in os.listdir(full) if n.lower().endswith(AUDIO_EXT))
+    try:
+        return sorted(n for n in os.listdir(full) if n.lower().endswith(AUDIO_EXT))
+    except OSError: return []
+
+books = []
+skipped_zero = []
+warned_partial = []
+missing_covers = []  # Books without cover that have a single audio file -- candidates for extraction
+
+# -- PASS 1: duration, chapters, existing covers --
+for folder_name in sorted(os.listdir(AUDIOBOOKS_DIR)):
+    full_folder = os.path.join(AUDIOBOOKS_DIR, folder_name)
+    if not os.path.isdir(full_folder) or folder_name.startswith("."): continue
+
+    audio_files = list_audio_files(folder_name)
     if not audio_files:
-        print(f"  [skip] No audio files in: {folder_name}")
-        continue
+        print(f"  [skip] No audio files in: {folder_name}"); continue
+
     print(f"  [book] {folder_name} ({len(audio_files)} track(s))")
+
     tracks = []
+    zero_tracks = []
+
     for filename in audio_files:
-        ms = get_duration_ms(os.path.join(full, filename))
+        full_file = os.path.join(full_folder, filename)
+        ms = get_duration_ms(full_file)
+        if ms == 0:
+            zero_tracks.append(filename)
+            print(f"    [warn] Duration 0ms: {filename}")
+        else:
+            print(f"    [ok]   {filename} ({ms // 1000}s)")
         tracks.append({"file": filename, "durationMs": ms})
-    books.append({
+
+    if zero_tracks:
+        if len(zero_tracks) == len(audio_files): skipped_zero.append(folder_name)
+        else: warned_partial.append(folder_name)
+
+    # Chapters for single-file books
+    chapters = []
+    if len(audio_files) == 1:
+        full_file = os.path.join(full_folder, audio_files[0])
+        chapters = get_chapters(full_file)
+        if chapters:
+            print(f"    [chapters] Found {len(chapters)} chapters")
+
+    # Cover -- only check if already exists, do NOT attempt extraction yet
+    cover_rel = find_cover(folder_name)
+
+    book = {
         "id":       slugify(folder_name),
         "title":    folder_name,
-        "coverUrl": find_cover(folder_name),
-        "tracks":   tracks
-    })
+        "coverUrl": cover_rel,
+        "tracks":   tracks,
+    }
+    if chapters:
+        book["chapters"] = chapters
 
-fd, tmp = tempfile.mkstemp(dir=os.path.dirname(OUT_FILE))
-try:
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump({"books": books}, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, OUT_FILE)
-except Exception as e:
+    books.append(book)
+
+    # Track candidates for cover extraction -- single file books without a cover
+    if cover_rel is None and len(audio_files) == 1:
+        missing_covers.append((folder_name, audio_files[0]))
+
+# -- Atomic write library.json -- Pass 1 result --
+def write_library(books):
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(OUT_FILE))
     try:
-        os.unlink(tmp)
-    except OSError:
-        pass
-    print(f"ERROR: {e}")
-    sys.exit(1)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"books": books}, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, OUT_FILE)
+        os.chmod(OUT_FILE, 0o664)
+    except Exception as e:
+        try: os.unlink(tmp)
+        except OSError: pass
+        raise e
 
+write_library(books)
 save_cache(cache)
-print(f"\n✅ Done. Wrote {len(books)} book(s) to {OUT_FILE}")
+print("")
+print("[regen] Pass 1 done. Written " + str(len(books)) + " book(s) to " + OUT_FILE)
+
+# -- PASS 2: cover extraction for books without a cover --
+# Each successful extraction immediately patches library.json
+if missing_covers:
+    print("")
+    print("[cover] Attempting cover extraction for " + str(len(missing_covers)) + " books...")
+    extracted_covers = []
+
+    for folder_name, audio_filename in missing_covers:
+        full_file = os.path.join(AUDIOBOOKS_DIR, folder_name, audio_filename)
+        cover_rel = extract_embedded_cover(full_file, folder_name)
+
+        if cover_rel:
+            extracted_covers.append(folder_name)
+            # Patch only this entry in library.json
+            try:
+                data = json.loads(open(OUT_FILE, encoding="utf-8").read())
+                book_id = slugify(folder_name)
+                for b in data["books"]:
+                    if b["id"] == book_id:
+                        b["coverUrl"] = cover_rel
+                        break
+                write_library(data["books"])
+                print(f"    [ok] Cover added to library.json for: {folder_name}")
+            except Exception as e:
+                print(f"    [warn] Could not patch library.json: {e}")
+
+    if extracted_covers:
+        print("")
+        print("[cover] Extracted embedded cover art for " + str(len(extracted_covers)) + " book(s):")
+        for b in extracted_covers: print("   - " + b)
+    else:
+        print("   No embedded artwork found in remaining books.")
+
+if skipped_zero:
+    print()
+    print("WARNING: ALL tracks 0ms duration:")
+    for b in skipped_zero: print(f"   - {b}")
+
+if warned_partial:
+    print()
+    print("WARNING: SOME tracks 0ms duration:")
+    for b in warned_partial: print(f"   - {b}")
+
 PY
 
-sudo /usr/bin/chown www-data:www-data "$OUT"
-sudo /usr/bin/chmod 664 "$OUT"
-sudo /usr/bin/chmod 775 "$DATA_DIR"
-echo "[regen] Permissions set. Library ready."
+# Postavi ispravne permisije na sve output fajlove
+sudo chown www-data:www-data "$OUT"
+sudo chmod 664 "$OUT"
+sudo chown www-data:www-data "$DATA_DIR/duration_cache.json" 2>/dev/null || true
+sudo chmod 664 "$DATA_DIR/duration_cache.json" 2>/dev/null || true
+sudo chmod 775 "$DATA_DIR"
+echo "[regen] Done."
 REGENEOF
 
 chmod +x "$API_DIR/regen_library.sh"
@@ -422,6 +587,9 @@ www-data ALL=(root) NOPASSWD: /usr/bin/chown -R www-data:www-data $AUDIOBOOKS_DI
 www-data ALL=(root) NOPASSWD: /usr/bin/chmod 644 /srv/audiobook-data/library.json
 www-data ALL=(root) NOPASSWD: /usr/bin/chmod 664 /srv/audiobook-data/library.json
 www-data ALL=(root) NOPASSWD: /usr/bin/chmod -R 755 $AUDIOBOOKS_DIR
+www-data ALL=(root) NOPASSWD: /usr/bin/chown www-data:www-data /srv/audiobook-data/duration_cache.json
+www-data ALL=(root) NOPASSWD: /usr/bin/chmod 664 /srv/audiobook-data/duration_cache.json
+www-data ALL=(root) NOPASSWD: /usr/bin/chmod 775 /srv/audiobook-data
 SUDOEOF
 
 chmod 440 /etc/sudoers.d/www-data-chown
