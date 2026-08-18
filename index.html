@@ -968,14 +968,20 @@ sudo nginx -t && sudo systemctl reload nginx</code></pre>
         <pre><code>sudo visudo -f /etc/sudoers.d/www-data-chown</code></pre>
         <p>Paste the following content:</p>
         <div class="code-label">/etc/sudoers.d/www-data-chown</div>
-        <pre><code>www-data ALL=(root) NOPASSWD: /usr/bin/chown www-data:www-data /srv/audiobook-data/library.json
-www-data ALL=(root) NOPASSWD: /usr/bin/chown -R www-data:www-data /mnt/audiodrive/audiobooks
+        <pre><code>www-data ALL=(root) NOPASSWD: /usr/bin/chown www-data\:www-data /srv/audiobook-data/library.json
+www-data ALL=(root) NOPASSWD: /usr/bin/chown -R www-data\:www-data /mnt/audiodrive/audiobooks
 www-data ALL=(root) NOPASSWD: /usr/bin/chmod 644 /srv/audiobook-data/library.json
 www-data ALL=(root) NOPASSWD: /usr/bin/chmod 664 /srv/audiobook-data/library.json
 www-data ALL=(root) NOPASSWD: /usr/bin/chmod -R 755 /mnt/audiodrive/audiobooks
-www-data ALL=(root) NOPASSWD: /usr/bin/chown www-data:www-data /srv/audiobook-data/duration_cache.json
+www-data ALL=(root) NOPASSWD: /usr/bin/chown www-data\:www-data /srv/audiobook-data/duration_cache.json
 www-data ALL=(root) NOPASSWD: /usr/bin/chmod 664 /srv/audiobook-data/duration_cache.json
 www-data ALL=(root) NOPASSWD: /usr/bin/chmod 775 /srv/audiobook-data</code></pre>
+        <p style="font-size: 0.85rem; color: var(--text-dim, #888); margin-top: 0.5rem;">
+          The backslash before each colon is required — sudoers treats an
+          unescaped <code>:</code> in a command argument as a syntax error, and
+          the whole file (and anything that depends on it, including the very
+          first library scan during install) fails to load until it's fixed.
+        </p>
         <p>Verify the syntax before saving:</p>
         <div class="code-label">terminal</div>
         <pre><code>sudo visudo -c -f /etc/sudoers.d/www-data-chown</code></pre>
